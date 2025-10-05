@@ -1,13 +1,38 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import FaceTrackingVRMViewer from '@/components/FaceTrackingVRMViewer';
-import Card from '@/components/Card';
-import Button from '@/components/Button';
+
+interface VRMModel {
+  name: string;
+  path: string;
+}
 
 export default function FaceTrackingPage() {
-  const [modelPath] = useState('/models/sample.vrm');
+  const [models, setModels] = useState<VRMModel[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('');
   const [isStarted, setIsStarted] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // VRM 모델 목록 로드
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        const response = await fetch('/api/vrm-models');
+        const data = await response.json();
+        setModels(data.models);
+        if (data.models.length > 0) {
+          setSelectedModel(data.models[0].path);
+        }
+      } catch (error) {
+        console.error('모델 목록 로드 실패:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadModels();
+  }, []);
 
   return (
     <div className="min-h-screen p-8 pb-20 sm:p-20 font-sans">
@@ -18,14 +43,14 @@ export default function FaceTrackingPage() {
             실시간 얼굴 추적 VTuber
           </h1>
           <p className="text-lg text-gray-600 dark:text-gray-400">
-            웹캠으로 얼굴을 추적하여 VRM 아바타를 실시간으로 조종하세요
+            웹캠으로 아바타를 실시간 조종하세요
           </p>
         </div>
 
         {!isStarted ? (
           /* 시작 화면 */
           <div className="max-w-2xl mx-auto">
-            <Card>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8">
               <div className="space-y-6">
                 <div className="text-center">
                   <div className="text-6xl mb-4">🎭</div>
@@ -33,162 +58,126 @@ export default function FaceTrackingPage() {
                     얼굴 추적 체험하기
                   </h2>
                   <p className="text-gray-600 dark:text-gray-400">
-                    이 기능은 웹캠 권한이 필요합니다
+                    웹캠 권한이 필요합니다
                   </p>
+                </div>
+
+                {/* 모델 선택 */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    아바타 선택
+                  </label>
+                  {isLoading ? (
+                    <div className="text-center py-4">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600 mx-auto"></div>
+                    </div>
+                  ) : models.length === 0 ? (
+                    <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg text-center">
+                      <p className="text-sm text-yellow-800 dark:text-yellow-300">
+                        VRM 파일을 public/models/ 폴더에 추가해주세요
+                      </p>
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700"
+                    >
+                      {models.map((model) => (
+                        <option key={model.path} value={model.path}>
+                          {model.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
                   <h3 className="font-bold mb-2 text-blue-900 dark:text-blue-300">
-                    ✨ 추적되는 기능
+                    ✨ 추적 기능
                   </h3>
                   <ul className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
                     <li>👀 눈 깜빡임 (좌/우 독립)</li>
-                    <li>👄 입 벌림 (A 발음)</li>
+                    <li>👄 입 벌림</li>
                     <li>🔄 머리 회전 (Yaw, Pitch, Roll)</li>
                   </ul>
                 </div>
 
                 <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg">
                   <h3 className="font-bold mb-2 text-yellow-900 dark:text-yellow-300">
-                    ⚠️ 주의사항
+                    ⚠️ 팁
                   </h3>
                   <ul className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
-                    <li>• 밝은 조명에서 사용하세요</li>
-                    <li>• 얼굴이 카메라에 정면으로 보이도록 하세요</li>
-                    <li>• 처음 로딩 시 시간이 걸릴 수 있습니다</li>
+                    <li>• 밝은 조명에서 사용</li>
+                    <li>• 얼굴을 카메라 정면에 위치</li>
+                    <li>• 과장된 표정으로 더 잘 인식</li>
                   </ul>
                 </div>
 
-                <Button
-                  variant="primary"
-                  size="lg"
-                  className="w-full"
+                <button
                   onClick={() => setIsStarted(true)}
+                  disabled={!selectedModel}
+                  className="w-full bg-gradient-to-r from-pink-500 to-purple-500 text-white font-bold py-3 px-6 rounded-lg hover:from-pink-600 hover:to-purple-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   시작하기
-                </Button>
+                </button>
               </div>
-            </Card>
+            </div>
           </div>
         ) : (
           /* 얼굴 추적 화면 */
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
             {/* VRM 뷰어 영역 */}
-            <div className="lg:col-span-2">
-              <Card title="실시간 아바타" className="h-full">
+            <div className="lg:col-span-3">
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
                 <div className="flex justify-center items-center bg-gradient-to-br from-purple-50 to-pink-50 dark:from-gray-900 dark:to-gray-800 rounded-lg p-4">
                   <FaceTrackingVRMViewer
-                    modelPath={modelPath}
+                    modelPath={selectedModel}
                     width={600}
                     height={600}
                     className="rounded-lg"
                   />
                 </div>
-              </Card>
+              </div>
             </div>
 
             {/* 컨트롤 패널 */}
             <div className="space-y-4">
-              <Card title="상태">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+                <h3 className="text-lg font-bold mb-3">상태</h3>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between p-2 bg-green-50 dark:bg-green-900/20 rounded">
                     <span className="text-sm">웹캠</span>
-                    <span className="text-xs px-2 py-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded">
-                      활성화
+                    <span className="text-xs px-2 py-1 bg-green-500 text-white rounded">
+                      ON
                     </span>
                   </div>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <span className="text-sm">얼굴 추적</span>
-                    <span className="text-xs px-2 py-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded">
-                      실행 중
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <span className="text-sm">VRM 모델</span>
-                    <span className="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded">
-                      로드됨
+                  <div className="flex items-center justify-between p-2 bg-green-50 dark:bg-green-900/20 rounded">
+                    <span className="text-sm">추적</span>
+                    <span className="text-xs px-2 py-1 bg-green-500 text-white rounded">
+                      ON
                     </span>
                   </div>
                 </div>
-              </Card>
+              </div>
 
-              <Card title="기능">
-                <div className="space-y-3 text-sm">
-                  <div className="flex items-start">
-                    <span className="mr-2">👀</span>
-                    <div>
-                      <div className="font-medium">눈 깜빡임</div>
-                      <div className="text-xs text-gray-600 dark:text-gray-400">
-                        좌우 눈 독립 추적
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-start">
-                    <span className="mr-2">👄</span>
-                    <div>
-                      <div className="font-medium">입 모양</div>
-                      <div className="text-xs text-gray-600 dark:text-gray-400">
-                        입 벌림 정도 감지
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-start">
-                    <span className="mr-2">🔄</span>
-                    <div>
-                      <div className="font-medium">머리 회전</div>
-                      <div className="text-xs text-gray-600 dark:text-gray-400">
-                        3축 회전 추적
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Card>
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+                <h3 className="text-lg font-bold mb-3">모델</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                  {models.find((m) => m.path === selectedModel)?.name ||
+                    'Unknown'}
+                </p>
+              </div>
 
-              <Card title="팁">
-                <div className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
-                  <p>💡 과장된 표정을 지으면 더 잘 인식됩니다</p>
-                  <p>💡 얼굴을 천천히 움직이면 부드럽게 추적됩니다</p>
-                  <p>💡 조명이 밝을수록 정확도가 높아집니다</p>
-                </div>
-              </Card>
-
-              <Button
-                variant="secondary"
-                className="w-full"
+              <button
                 onClick={() => setIsStarted(false)}
+                className="w-full bg-gray-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-gray-600 transition-all"
               >
                 종료
-              </Button>
+              </button>
             </div>
           </div>
         )}
-
-        {/* 기술 정보 */}
-        <div className="mt-8">
-          <Card>
-            <h3 className="text-lg font-bold mb-3">🔧 기술 스택</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
-              <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                <div className="font-bold mb-1">얼굴 추적</div>
-                <div className="text-gray-600 dark:text-gray-400">
-                  MediaPipe Face Landmarker
-                </div>
-              </div>
-              <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                <div className="font-bold mb-1">3D 렌더링</div>
-                <div className="text-gray-600 dark:text-gray-400">
-                  Three.js + WebGL
-                </div>
-              </div>
-              <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                <div className="font-bold mb-1">아바타</div>
-                <div className="text-gray-600 dark:text-gray-400">
-                  VRM 1.0 / @pixiv/three-vrm
-                </div>
-              </div>
-            </div>
-          </Card>
-        </div>
       </main>
     </div>
   );
