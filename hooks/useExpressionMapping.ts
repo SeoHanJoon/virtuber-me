@@ -6,40 +6,7 @@
  */
 
 import { useMemo } from 'react';
-import type { FaceLandmarks } from './useFaceTracking';
-import type { VRMExpressionPresetName } from '@pixiv/three-vrm';
-
-/**
- * VRM 표정 상태
- */
-export interface VRMExpression {
-  // 현재 활성 표정 이름
-  name: VRMExpressionPresetName | string;
-
-  // 개별 표정 값 (0~1)
-  values: {
-    neutral: number;
-    aa: number;
-    ih: number;
-    ou: number;
-    ee: number;
-    oh: number;
-    blink: number;
-    blinkLeft: number;
-    blinkRight: number;
-    happy: number;
-    angry: number;
-    sad: number;
-    relaxed: number;
-    lookUp: number;
-    lookDown: number;
-    lookLeft: number;
-    lookRight: number;
-  };
-
-  // 감정 상태
-  mood: 'neutral' | 'happy' | 'sad' | 'angry' | 'relaxed';
-}
+import type { FaceLandmarks, VRMExpression } from '../types/tracking';
 
 /**
  * 표정 매핑 훅

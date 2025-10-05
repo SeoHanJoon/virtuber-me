@@ -18,30 +18,7 @@ import { useFaceTracking } from '../hooks/useFaceTracking';
 import { useExpressionMapping } from '../hooks/useExpressionMapping';
 import { useNetworkSync } from '../hooks/useNetworkSync';
 import { useControls } from '../hooks/useControls';
-
-/**
- * 컴포넌트 Props
- */
-export interface MultiplayerVRMWorldProps {
-  // 내 아바타 모델 경로
-  myModelPath: string;
-
-  // 닉네임
-  nickname?: string;
-
-  // 서버 URL
-  serverUrl?: string;
-
-  // 캔버스 크기
-  width?: number;
-  height?: number;
-
-  // 클래스명
-  className?: string;
-
-  // 최대 렌더링 거리 (성능 최적화)
-  maxRenderDistance?: number;
-}
+import type { MultiplayerVRMWorldProps } from '../types/components';
 
 /**
  * 멀티플레이어 VRM 월드

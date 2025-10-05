@@ -9,16 +9,7 @@ import {
   VRMUtils,
   VRMExpressionPresetName,
 } from '@pixiv/three-vrm';
-
-interface FaceTrackingVRMViewerProps {
-  modelPath: string;
-  className?: string;
-  width?: number;
-  height?: number;
-  mirrorMode?: boolean; // 좌우 미러
-  rotateModel?: boolean; // 모델 180도 회전
-  invertPitch?: boolean; // pitch 추적 반전 (위아래 반대)
-}
+import type { FaceTrackingVRMViewerProps } from '../types/components';
 
 export default function FaceTrackingVRMViewer({
   modelPath,

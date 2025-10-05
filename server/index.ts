@@ -18,7 +18,7 @@ import type {
   UpdatePayload,
   ServerToClientEvents,
   ClientToServerEvents,
-} from './types';
+} from '../types/multiplayer';
 
 // Express 앱 생성
 const app = express();

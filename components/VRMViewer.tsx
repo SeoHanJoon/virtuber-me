@@ -4,15 +4,7 @@ import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRM, VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
-
-interface VRMViewerProps {
-  modelPath: string;
-  className?: string;
-  width?: number;
-  height?: number;
-  mirrorMode?: boolean; // 좌우 미러
-  rotateModel?: boolean; // 모델 180도 회전
-}
+import type { VRMViewerProps } from '../types/components';
 
 export default function VRMViewer({
   modelPath,
