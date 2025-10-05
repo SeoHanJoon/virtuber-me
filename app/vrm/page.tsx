@@ -2,11 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import VRMViewer from '@/components/VRMViewer';
-
-interface VRMModel {
-  name: string;
-  path: string;
-}
+import type { VRMModel } from '@/types/vrm';
 
 export default function VRMPage() {
   const [models, setModels] = useState<VRMModel[]>([]);
@@ -22,13 +18,25 @@ export default function VRMPage() {
     const loadModels = async () => {
       try {
         const response = await fetch('/api/vrm-models');
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
         const data = await response.json();
-        setModels(data.models);
-        if (data.models.length > 0) {
-          setSelectedModel(data.models[0].path);
+
+        if (Array.isArray(data)) {
+          setModels(data);
+          if (data.length > 0) {
+            setSelectedModel(data[0].path);
+          }
+        } else {
+          console.error('API 응답이 배열이 아닙니다:', data);
+          setModels([]);
         }
       } catch (error) {
         console.error('모델 목록 로드 실패:', error);
+        setModels([]);
       } finally {
         setIsLoading(false);
       }

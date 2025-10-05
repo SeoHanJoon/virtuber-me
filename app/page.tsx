@@ -51,19 +51,21 @@ export default function Home() {
             </div>
           </Link>
 
-          {/* 멀티플레이어 (Coming Soon) */}
-          <div className="relative cursor-not-allowed bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 p-8 rounded-2xl border-2 border-blue-200 dark:border-blue-700 opacity-60">
-            <div className="absolute top-4 right-4 bg-blue-500 text-white text-xs px-3 py-1 rounded-full font-bold">
-              COMING SOON
+          {/* 멀티플레이어 */}
+          <Link href="/multiplayer">
+            <div className="group cursor-pointer bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 p-8 rounded-2xl hover:shadow-xl transition-all duration-300 border-2 border-blue-200 dark:border-blue-700 hover:scale-105">
+              <div className="text-5xl mb-4">🌐</div>
+              <h2 className="text-2xl font-bold mb-3 text-blue-900 dark:text-blue-300">
+                멀티플레이어 월드
+              </h2>
+              <p className="text-gray-700 dark:text-gray-300 mb-4">
+                VRChat처럼 다른 사람들과 만나고 소통하세요 (최대 100명)
+              </p>
+              <div className="text-blue-600 dark:text-blue-400 font-medium group-hover:translate-x-2 transition-transform inline-block">
+                입장하기 →
+              </div>
             </div>
-            <div className="text-5xl mb-4">🌐</div>
-            <h2 className="text-2xl font-bold mb-3 text-blue-900 dark:text-blue-300">
-              멀티플레이어
-            </h2>
-            <p className="text-gray-700 dark:text-gray-300">
-              VRChat처럼 다른 사람들과 만나고 소통하세요
-            </p>
-          </div>
+          </Link>
 
           {/* 기술 정보 */}
           <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800/50 dark:to-gray-700/50 p-8 rounded-2xl border-2 border-gray-200 dark:border-gray-600">
@@ -76,7 +78,7 @@ export default function Home() {
               <li>• Three.js + @pixiv/three-vrm</li>
               <li>• MediaPipe Face Landmarker</li>
               <li>• Tailwind CSS 4</li>
-              <li>• WebRTC (예정)</li>
+              <li>• Socket.IO (멀티플레이어)</li>
             </ul>
           </div>
         </div>
@@ -87,7 +89,8 @@ export default function Home() {
           <p className="text-gray-700 dark:text-gray-300 max-w-2xl mx-auto">
             Virtuber Me는 브라우저에서 바로 사용할 수 있는 VTuber 플랫폼입니다.
             VRM 아바타를 업로드하고, 웹캠으로 실시간 얼굴 추적을 통해 아바타를
-            조종할 수 있습니다. 향후 멀티플레이어 기능이 추가될 예정입니다.
+            조종할 수 있습니다. 멀티플레이어 월드에서 다른 사용자들과 함께
+            소통해보세요!
           </p>
         </div>
       </main>

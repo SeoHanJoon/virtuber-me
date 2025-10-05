@@ -1,0 +1,24 @@
+{
+  "name": "virtuber-me-server",
+  "version": "1.0.0",
+  "description": "VRM 멀티플레이어 월드 서버",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node index.ts",
+    "watch": "nodemon --watch . --ext ts --exec ts-node index.ts"
+  },
+  "keywords": [
+    "vrm",
+    "multiplayer",
+    "socketio"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
