@@ -13,6 +13,10 @@ export default function VRMPage() {
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
 
+  // 모델 변형 옵션 상태
+  const [mirrorMode, setMirrorMode] = useState(false);
+  const [rotateModel, setRotateModel] = useState(false);
+
   // VRM 모델 목록 로드
   useEffect(() => {
     const loadModels = async () => {
@@ -57,6 +61,8 @@ export default function VRMPage() {
                     width={600}
                     height={600}
                     className="rounded-lg"
+                    mirrorMode={mirrorMode}
+                    rotateModel={rotateModel}
                   />
                 ) : (
                   <div className="text-center text-gray-500 dark:text-gray-400">
@@ -116,6 +122,36 @@ export default function VRMPage() {
               )}
             </div>
 
+            {/* 모델 변형 컨트롤 */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+              <h3 className="text-lg font-bold mb-4">🔄 모델 설정</h3>
+              <div className="space-y-3">
+                <label className="flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rotateModel}
+                    onChange={(e) => setRotateModel(e.target.checked)}
+                    className="w-4 h-4 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500 dark:focus:ring-purple-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                  />
+                  <span className="ml-3 text-sm font-medium text-gray-900 dark:text-gray-300">
+                    모델 180° 회전
+                  </span>
+                </label>
+
+                <label className="flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={mirrorMode}
+                    onChange={(e) => setMirrorMode(e.target.checked)}
+                    className="w-4 h-4 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500 dark:focus:ring-purple-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                  />
+                  <span className="ml-3 text-sm font-medium text-gray-900 dark:text-gray-300">
+                    좌우 미러
+                  </span>
+                </label>
+              </div>
+            </div>
+
             {/* 정보 */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
               <h3 className="text-lg font-bold mb-3">💡 사용 방법</h3>
@@ -123,6 +159,7 @@ export default function VRMPage() {
                 <li>• VRM 파일을 public/models/ 폴더에 추가</li>
                 <li>• 왼쪽에서 모델 선택</li>
                 <li>• 마우스로 회전 가능</li>
+                <li>• 모델이 뒤돌아 있으면 180° 회전 체크</li>
               </ul>
             </div>
           </div>

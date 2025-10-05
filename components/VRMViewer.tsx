@@ -10,6 +10,8 @@ interface VRMViewerProps {
   className?: string;
   width?: number;
   height?: number;
+  mirrorMode?: boolean; // 좌우 미러
+  rotateModel?: boolean; // 모델 180도 회전
 }
 
 export default function VRMViewer({
@@ -17,6 +19,8 @@ export default function VRMViewer({
   className = '',
   width = 800,
   height = 600,
+  mirrorMode = false,
+  rotateModel = false,
 }: VRMViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const vrmRef = useRef<VRM | null>(null);
@@ -76,6 +80,9 @@ export default function VRMViewer({
         // 씬에 VRM 모델 추가
         scene.add(vrm.scene);
 
+        // 모델 변형 적용
+        applyTransforms(vrm.scene, mirrorMode, rotateModel);
+
         console.log('VRM 모델 로드 완료:', vrm);
       },
       (progress) => {
@@ -128,7 +135,14 @@ export default function VRMViewer({
       // 렌더러 정리
       renderer.dispose();
     };
-  }, [modelPath, width, height]);
+  }, [modelPath, width, height, mirrorMode, rotateModel]);
+
+  // 모델이 로드된 후 변형 상태가 변경되면 적용
+  useEffect(() => {
+    if (vrmRef.current) {
+      applyTransforms(vrmRef.current.scene, mirrorMode, rotateModel);
+    }
+  }, [mirrorMode, rotateModel]);
 
   return (
     <canvas
@@ -141,4 +155,22 @@ export default function VRMViewer({
       }}
     />
   );
+}
+
+/**
+ * VRM 모델에 변형을 적용하는 함수
+ * @param scene - VRM scene 객체
+ * @param mirrorMode - 좌우 미러 모드
+ * @param rotateModel - 모델 180도 회전
+ */
+function applyTransforms(
+  scene: THREE.Group,
+  mirrorMode: boolean,
+  rotateModel: boolean
+) {
+  // 좌우 미러 (거울 모드)
+  scene.scale.x = mirrorMode ? -1 : 1;
+
+  // 모델 180도 회전 (뒤돌아 있는 경우)
+  scene.rotation.y = rotateModel ? Math.PI : 0;
 }

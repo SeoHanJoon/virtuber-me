@@ -15,6 +15,9 @@ interface FaceTrackingVRMViewerProps {
   className?: string;
   width?: number;
   height?: number;
+  mirrorMode?: boolean; // 좌우 미러
+  rotateModel?: boolean; // 모델 180도 회전
+  invertPitch?: boolean; // pitch 추적 반전 (위아래 반대)
 }
 
 export default function FaceTrackingVRMViewer({
@@ -22,6 +25,9 @@ export default function FaceTrackingVRMViewer({
   className = '',
   width = 800,
   height = 600,
+  mirrorMode = false,
+  rotateModel = false,
+  invertPitch = false,
 }: FaceTrackingVRMViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -164,6 +170,10 @@ export default function FaceTrackingVRMViewer({
         VRMUtils.removeUnnecessaryJoints(gltf.scene);
 
         scene.add(vrm.scene);
+
+        // 모델 변형 적용
+        applyTransforms(vrm.scene, mirrorMode, rotateModel);
+
         console.log('VRM 모델 로드 완료');
       },
       (progress) => {
@@ -213,7 +223,11 @@ export default function FaceTrackingVRMViewer({
 
             if (result && result.faceLandmarks && result.faceLandmarks[0]) {
               // 얼굴 추적 데이터를 VRM에 적용
-              applyFaceTrackingToVRM(vrmRef.current, result.faceLandmarks[0]);
+              applyFaceTrackingToVRM(
+                vrmRef.current,
+                result.faceLandmarks[0],
+                invertPitch
+              );
             }
           } catch {
             // 추적 실패 시 무시 (성능을 위해 로그 최소화)
@@ -242,7 +256,14 @@ export default function FaceTrackingVRMViewer({
       }
       renderer.dispose();
     };
-  }, [modelPath, width, height]);
+  }, [modelPath, width, height, mirrorMode, rotateModel, invertPitch]);
+
+  // 모델이 로드된 후 변형 상태가 변경되면 적용
+  useEffect(() => {
+    if (vrmRef.current) {
+      applyTransforms(vrmRef.current.scene, mirrorMode, rotateModel);
+    }
+  }, [mirrorMode, rotateModel]);
 
   return (
     <div className="relative">
@@ -287,10 +308,12 @@ export default function FaceTrackingVRMViewer({
  * 얼굴 추적 데이터를 VRM 아바타에 적용하는 함수
  * @param vrm - VRM 아바타 인스턴스
  * @param landmarks - MediaPipe 얼굴 랜드마크 배열 (478개 점)
+ * @param invertPitch - pitch 추적 반전 여부
  */
 function applyFaceTrackingToVRM(
   vrm: VRM,
-  landmarks: Array<{ x: number; y: number; z: number }>
+  landmarks: Array<{ x: number; y: number; z: number }>,
+  invertPitch: boolean
 ) {
   if (!landmarks || landmarks.length === 0) return;
 
@@ -349,7 +372,10 @@ function applyFaceTrackingToVRM(
         Math.PI / 2;
 
       // Pitch (위아래 회전) 계산
-      const pitch = (noseTip.y - 0.5) * 1.5;
+      let pitch = (noseTip.y - 0.5) * 1.5;
+      if (invertPitch) {
+        pitch = -pitch; // pitch 반전
+      }
 
       // Roll (기울임) 계산
       const roll =
@@ -419,4 +445,22 @@ function calculateMouthOpenRatio(
 
   // 정규화
   return distance / 0.05; // 임계값은 조정 가능
+}
+
+/**
+ * VRM 모델에 변형을 적용하는 함수
+ * @param scene - VRM scene 객체
+ * @param mirrorMode - 좌우 미러 모드
+ * @param rotateModel - 모델 180도 회전
+ */
+function applyTransforms(
+  scene: THREE.Group,
+  mirrorMode: boolean,
+  rotateModel: boolean
+) {
+  // 좌우 미러 (거울 모드)
+  scene.scale.x = mirrorMode ? -1 : 1;
+
+  // 모델 180도 회전 (뒤돌아 있는 경우)
+  scene.rotation.y = rotateModel ? Math.PI : 0;
 }
