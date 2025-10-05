@@ -11,6 +11,7 @@ Next.js 15, TypeScript, Tailwind CSS로 구축된 현대적인 웹 애플리케�
 - **Husky + lint-staged**: Git 커밋 전 자동 린트 및 포맷팅
 - **확장 가능한 구조**: 체계적인 폴더 구조로 쉬운 확장성
 - **VRM 모델 렌더링**: Three.js와 @pixiv/three-vrm을 사용한 3D 아바타 렌더링
+- **실시간 얼굴 추적**: MediaPipe로 웹캠 얼굴 추적 후 VRM 아바타에 실시간 적용
 
 ## 📦 기술 스택
 
@@ -18,6 +19,7 @@ Next.js 15, TypeScript, Tailwind CSS로 구축된 현대적인 웹 애플리케�
 - **언어**: TypeScript 5
 - **스타일링**: Tailwind CSS 4
 - **3D 렌더링**: Three.js + @pixiv/three-vrm
+- **얼굴 추적**: MediaPipe Face Landmarker
 - **린팅**: ESLint 9
 - **포맷팅**: Prettier 3.6
 - **Git Hooks**: Husky 9.1 + lint-staged 16.2
@@ -33,11 +35,14 @@ virtuber-me/
 │ ├── page.tsx # 메인 페이지
 │ ├── vrm/ # VRM 뷰어 페이지
 │ │ └── page.tsx # VRM 모델 렌더링 페이지
+│ ├── face-tracking/ # 얼굴 추적 페이지
+│ │ └── page.tsx # 실시간 얼굴 추적 VTuber
 │ └── globals.css # 글로벌 스타일
 ├── components/ # 재사용 가능한 React 컴포넌트
 │ ├── Button.tsx # 버튼 컴포넌트
 │ ├── Card.tsx # 카드 컴포넌트
-│ └── VRMViewer.tsx # VRM 3D 모델 뷰어
+│ ├── VRMViewer.tsx # VRM 3D 모델 뷰어
+│ └── FaceTrackingVRMViewer.tsx # 얼굴 추적 VRM 뷰어
 ├── lib/ # 유틸리티 함수 및 헬퍼
 │ └── utils.ts # 공통 유틸리티 함수
 ├── types/ # TypeScript 타입 정의
@@ -237,6 +242,46 @@ import VRMViewer from '@/components/VRMViewer';
   className="rounded-lg"
 />
 \`\`\`
+
+## 📹 실시간 얼굴 추적 (VTuber 기능)
+
+웹캠으로 얼굴을 추적하여 VRM 아바타를 실시간으로 조종할 수 있습니다.
+
+### 얼굴 추적 페이지 접속
+
+개발 서버를 실행한 후 \`http://localhost:3000/face-tracking\`으로 이동
+
+### 추적 기능
+
+- **눈 깜빡임**: 좌/우 눈을 독립적으로 추적하여 자연스러운 깜빡임 구현
+- **입 모양**: 입 벌림 정도를 감지하여 'aa' 발음 표현 (A shape)
+- **머리 회전**: 3축 회전 (Yaw, Pitch, Roll) 실시간 추적
+
+### 사용 팁
+
+- 밝은 조명에서 사용하면 추적 정확도가 높아집니다
+- 얼굴을 카메라 정면에 위치시키세요
+- 과장된 표정을 지으면 더 잘 인식됩니다
+
+### FaceTrackingVRMViewer 컴포넌트 사용
+
+\`\`\`tsx
+import FaceTrackingVRMViewer from '@/components/FaceTrackingVRMViewer';
+
+<FaceTrackingVRMViewer
+  modelPath="/models/sample.vrm"
+  width={600}
+  height={600}
+  className="rounded-lg"
+/>
+\`\`\`
+
+### 기술 구현
+
+- **MediaPipe Face Landmarker**: 478개 얼굴 랜드마크 추적
+- **실시간 처리**: requestAnimationFrame으로 60fps 목표
+- **표정 매핑**: 얼굴 랜드마크를 VRM 표정 파라미터로 변환
+- **성능 최적화**: GPU 가속 및 효율적인 업데이트 로직
 
 ## 🔍 추가 리소스
 

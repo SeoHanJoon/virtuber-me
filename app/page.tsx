@@ -57,18 +57,48 @@ export default function Home() {
               Husky와 lint-staged로 커밋 전 자동으로 린트와 포맷팅을 수행합니다.
             </p>
           </Card>
+
+          <Card title="🎭 VRM 모델 렌더링">
+            <p>
+              Three.js와 @pixiv/three-vrm을 사용하여 3D 아바타를 실시간으로
+              렌더링합니다.
+            </p>
+            <a
+              href="/vrm"
+              className="inline-block mt-3 text-purple-600 dark:text-purple-400 hover:underline font-medium"
+            >
+              VRM 뷰어 보기 →
+            </a>
+          </Card>
+
+          <Card title="📹 실시간 얼굴 추적">
+            <p>
+              웹캠으로 얼굴을 추적하여 VRM 아바타를 실시간으로 조종하는 VTuber
+              기능을 체험하세요.
+            </p>
+            <a
+              href="/face-tracking"
+              className="inline-block mt-3 text-pink-600 dark:text-pink-400 hover:underline font-medium"
+            >
+              얼굴 추적 체험하기 →
+            </a>
+          </Card>
         </div>
 
         {/* 액션 버튼 섹션 */}
         <div className="flex flex-wrap gap-4 justify-center">
-          <Button variant="primary" size="lg">
-            시작하기
-          </Button>
-          <Button variant="outline" size="lg">
-            문서 보기
-          </Button>
+          <a href="/face-tracking">
+            <Button variant="primary" size="lg">
+              🎭 얼굴 추적 체험
+            </Button>
+          </a>
+          <a href="/vrm">
+            <Button variant="outline" size="lg">
+              🎨 VRM 뷰어
+            </Button>
+          </a>
           <Button variant="secondary" size="lg">
-            예제 확인
+            📚 문서 보기
           </Button>
         </div>
 
