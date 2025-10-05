@@ -10,12 +10,14 @@ Next.js 15, TypeScript, Tailwind CSS로 구축된 현대적인 웹 애플리케�
 - **ESLint + Prettier**: 코드 품질 및 일관된 스타일 유지
 - **Husky + lint-staged**: Git 커밋 전 자동 린트 및 포맷팅
 - **확장 가능한 구조**: 체계적인 폴더 구조로 쉬운 확장성
+- **VRM 모델 렌더링**: Three.js와 @pixiv/three-vrm을 사용한 3D 아바타 렌더링
 
 ## 📦 기술 스택
 
 - **프레임워크**: Next.js 15.5.4
 - **언어**: TypeScript 5
 - **스타일링**: Tailwind CSS 4
+- **3D 렌더링**: Three.js + @pixiv/three-vrm
 - **린팅**: ESLint 9
 - **포맷팅**: Prettier 3.6
 - **Git Hooks**: Husky 9.1 + lint-staged 16.2
@@ -29,15 +31,19 @@ virtuber-me/
 ├── app/ # Next.js App Router 디렉토리
 │ ├── layout.tsx # 루트 레이아웃
 │ ├── page.tsx # 메인 페이지
+│ ├── vrm/ # VRM 뷰어 페이지
+│ │ └── page.tsx # VRM 모델 렌더링 페이지
 │ └── globals.css # 글로벌 스타일
 ├── components/ # 재사용 가능한 React 컴포넌트
 │ ├── Button.tsx # 버튼 컴포넌트
-│ └── Card.tsx # 카드 컴포넌트
+│ ├── Card.tsx # 카드 컴포넌트
+│ └── VRMViewer.tsx # VRM 3D 모델 뷰어
 ├── lib/ # 유틸리티 함수 및 헬퍼
 │ └── utils.ts # 공통 유틸리티 함수
 ├── types/ # TypeScript 타입 정의
 │ └── index.ts # 공통 타입 정의
 ├── public/ # 정적 파일 (이미지, 폰트 등)
+│ └── models/ # VRM 모델 파일 저장 디렉토리
 ├── .husky/ # Husky Git hooks 설정
 ├── .nvmrc # Node.js 버전 지정
 ├── .prettierrc # Prettier 설정
@@ -197,6 +203,39 @@ id: string;
 name: string;
 price: number;
 }
+\`\`\`
+
+## 🎭 VRM 모델 사용하기
+
+이 프로젝트는 VRM 3D 아바타를 렌더링할 수 있습니다.
+
+### VRM 뷰어 페이지 접속
+
+개발 서버를 실행한 후 \`http://localhost:3000/vrm\`으로 이동
+
+### VRM 모델 추가하기
+
+1. VRM 파일을 \`public/models/\` 디렉토리에 저장
+2. VRM 뷰어 페이지에서 모델 경로 입력 (예: \`/models/avatar.vrm\`)
+3. 모델이 자동으로 로드되고 렌더링됩니다
+
+### VRM 모델 다운로드
+
+- **VRoid Hub**: https://hub.vroid.com/ - 무료/유료 VRM 모델
+- **VRoid Studio**: https://vroid.com/studio - 직접 캐릭터 제작
+- **Three-VRM 샘플**: https://github.com/pixiv/three-vrm
+
+### VRMViewer 컴포넌트 사용
+
+\`\`\`tsx
+import VRMViewer from '@/components/VRMViewer';
+
+<VRMViewer
+  modelPath="/models/sample.vrm"
+  width={800}
+  height={600}
+  className="rounded-lg"
+/>
 \`\`\`
 
 ## 🔍 추가 리소스
