@@ -5,8 +5,9 @@
 ## 🚀 주요 기능
 
 - **VRM 모델 뷰어**: 3D 아바타 확인 및 탐색
-- **실시간 얼굴 추적**: 웹캠으로 아바타 실시간 조종
+- **실시간 얼굴 추적**: 웹캠으로 아바타 실시간 조종 (정밀 표정 인식 🎯)
 - **멀티플레이어 월드**: 최대 100명이 동시 접속 가능한 VRM 아바타 월드 🎉
+- **고급 얼굴 분석**: 입 모양, 눈 깜빡임, 시선, 미소 감지 (468+ 랜드마크)
 
 ## 📦 기술 스택
 
@@ -36,6 +37,14 @@ virtuber-me/
 │ ├── useExpressionMapping.ts # 표정 매핑 훅 ✨
 │ ├── useNetworkSync.ts # 네트워크 동기화 훅 ✨
 │ └── useControls.ts # WASD 컨트롤 훅 ✨
+├── utils/
+│ ├── faceStateCalculator.ts # 정밀 얼굴 상태 계산기 🎯
+│ └── README.md # 상세 사용법 문서
+├── types/
+│ ├── vrm.ts # VRM 타입 정의
+│ ├── multiplayer.ts # 멀티플레이어 타입 정의
+│ ├── tracking.ts # 추적 타입 정의
+│ └── components.ts # 컴포넌트 Props 타입
 ├── server/ # 멀티플레이어 서버 ✨
 │ ├── index.ts # Socket.IO 서버
 │ ├── types.ts # 타입 정의
@@ -95,6 +104,42 @@ npm run server:dev
 \`\`\`
 
 이제 \`http://localhost:3000/multiplayer\`에서 멀티플레이어 월드에 접속할 수 있습니다!
+
+## 🎯 고급 기능: FaceStateCalculator
+
+MediaPipe의 468개 랜드마크를 분석하여 정밀한 얼굴 상태를 계산합니다.
+
+### 특징
+
+- 🎯 **9가지 상태 추적**: 입 벌림, 입 너비, 미소, 양쪽 눈 깜빡임, 시선 4방향
+- 🎬 **스무딩**: Lerp를 통한 부드러운 애니메이션
+- ⚡ **고성능**: 30fps 이상 유지
+- 🔄 **자동 decay**: 얼굴 미감지 시 중립 상태로 자동 전환
+- 📐 **정규화**: 얼굴 크기 무관한 일관된 값
+
+### 사용 예제
+
+```typescript
+import {
+  FaceStateCalculator,
+  mapFaceStateToVRM,
+} from '@/utils/faceStateCalculator';
+
+// 계산기 생성 (스무딩 강도: 0.7)
+const calculator = new FaceStateCalculator(0.7);
+
+// MediaPipe 결과로부터 얼굴 상태 계산
+const faceState = calculator.calculateFaceState(landmarks);
+
+// VRM 표정으로 변환 및 적용
+const vrmMapping = mapFaceStateToVRM(faceState);
+vrm.expressionManager.setValue(
+  vrmMapping.mouth.expression,
+  vrmMapping.mouth.value
+);
+```
+
+자세한 사용법은 [`utils/README.md`](./utils/README.md)를 참고하세요.
 
 ## 📝 사용 방법
 

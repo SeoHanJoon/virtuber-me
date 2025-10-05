@@ -10,6 +10,10 @@ import {
   VRMExpressionPresetName,
 } from '@pixiv/three-vrm';
 import type { FaceTrackingVRMViewerProps } from '../types/components';
+import {
+  FaceStateCalculator,
+  mapFaceStateToVRM,
+} from '../utils/faceStateCalculator';
 
 export default function FaceTrackingVRMViewer({
   modelPath,
@@ -27,6 +31,25 @@ export default function FaceTrackingVRMViewer({
   const [error, setError] = useState<string | null>(null);
   const faceLandmarkerRef = useRef<unknown>(null);
   const animationFrameRef = useRef<number | null>(null);
+
+  // FaceStateCalculator 인스턴스 (스무딩 강도: 0.7, 눈 깜빡임 강도: 1.5)
+  const faceCalculatorRef = useRef(
+    new FaceStateCalculator({
+      smoothingFactor: 0.7,
+      multipliers: { blink: 1.5 }, // 기본 눈 깜빡임 강도 1.5배
+    })
+  );
+
+  // 표정 강도 조절 상태
+  const [expressionMultipliers, setExpressionMultipliers] = useState({
+    mouthOpen: 1.0,
+    mouthWidth: 1.0,
+    mouthSmile: 1.0,
+    blink: 1.5, // 기본값 1.5배
+    eyeLook: 1.0,
+  });
+
+  const [showSettings, setShowSettings] = useState(false);
 
   // 웹캠 스트림 초기화
   useEffect(() => {
@@ -213,10 +236,11 @@ export default function FaceTrackingVRMViewer({
             ).detectForVideo(videoRef.current, performance.now());
 
             if (result && result.faceLandmarks && result.faceLandmarks[0]) {
-              // 얼굴 추적 데이터를 VRM에 적용
+              // 얼굴 추적 데이터를 VRM에 적용 (FaceStateCalculator 사용)
               applyFaceTrackingToVRM(
                 vrmRef.current,
                 result.faceLandmarks[0],
+                faceCalculatorRef.current,
                 invertPitch
               );
             }
@@ -256,6 +280,19 @@ export default function FaceTrackingVRMViewer({
     }
   }, [mirrorMode, rotateModel]);
 
+  // 표정 강도 변경 핸들러
+  const handleMultiplierChange = (
+    key: keyof typeof expressionMultipliers,
+    value: number
+  ) => {
+    const newMultipliers = {
+      ...expressionMultipliers,
+      [key]: value,
+    };
+    setExpressionMultipliers(newMultipliers);
+    faceCalculatorRef.current.setMultipliers(newMultipliers);
+  };
+
   return (
     <div className="relative">
       {/* 웹캠 비디오 (숨김 처리) */}
@@ -291,67 +328,227 @@ export default function FaceTrackingVRMViewer({
           <span className="text-green-400">✅ 추적 활성화</span>
         )}
       </div>
+
+      {/* 표정 강도 조절 패널 */}
+      <div className="absolute top-4 right-4">
+        <button
+          onClick={() => setShowSettings(!showSettings)}
+          className="bg-black/50 hover:bg-black/70 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+        >
+          ⚙️ 표정 강도 조절
+        </button>
+
+        {showSettings && (
+          <div className="mt-2 bg-black/90 text-white p-4 rounded-lg text-sm w-64 space-y-3">
+            <h3 className="font-bold text-base mb-3">표정 강도 설정</h3>
+
+            {/* 눈 깜빡임 강도 */}
+            <div>
+              <label className="flex justify-between mb-1">
+                <span>👁️ 눈 깜빡임</span>
+                <span className="text-yellow-400">
+                  {expressionMultipliers.blink.toFixed(1)}x
+                </span>
+              </label>
+              <input
+                type="range"
+                min="0.5"
+                max="3.0"
+                step="0.1"
+                value={expressionMultipliers.blink}
+                onChange={(e) =>
+                  handleMultiplierChange('blink', parseFloat(e.target.value))
+                }
+                className="w-full"
+              />
+            </div>
+
+            {/* 입 벌림 강도 */}
+            <div>
+              <label className="flex justify-between mb-1">
+                <span>👄 입 벌림</span>
+                <span className="text-yellow-400">
+                  {expressionMultipliers.mouthOpen.toFixed(1)}x
+                </span>
+              </label>
+              <input
+                type="range"
+                min="0.5"
+                max="2.0"
+                step="0.1"
+                value={expressionMultipliers.mouthOpen}
+                onChange={(e) =>
+                  handleMultiplierChange(
+                    'mouthOpen',
+                    parseFloat(e.target.value)
+                  )
+                }
+                className="w-full"
+              />
+            </div>
+
+            {/* 미소 강도 */}
+            <div>
+              <label className="flex justify-between mb-1">
+                <span>😊 미소</span>
+                <span className="text-yellow-400">
+                  {expressionMultipliers.mouthSmile.toFixed(1)}x
+                </span>
+              </label>
+              <input
+                type="range"
+                min="0.5"
+                max="2.0"
+                step="0.1"
+                value={expressionMultipliers.mouthSmile}
+                onChange={(e) =>
+                  handleMultiplierChange(
+                    'mouthSmile',
+                    parseFloat(e.target.value)
+                  )
+                }
+                className="w-full"
+              />
+            </div>
+
+            {/* 시선 강도 */}
+            <div>
+              <label className="flex justify-between mb-1">
+                <span>👀 시선</span>
+                <span className="text-yellow-400">
+                  {expressionMultipliers.eyeLook.toFixed(1)}x
+                </span>
+              </label>
+              <input
+                type="range"
+                min="0.5"
+                max="2.0"
+                step="0.1"
+                value={expressionMultipliers.eyeLook}
+                onChange={(e) =>
+                  handleMultiplierChange('eyeLook', parseFloat(e.target.value))
+                }
+                className="w-full"
+              />
+            </div>
+
+            {/* 초기화 버튼 */}
+            <button
+              onClick={() => {
+                const defaultMultipliers = {
+                  mouthOpen: 1.0,
+                  mouthWidth: 1.0,
+                  mouthSmile: 1.0,
+                  blink: 1.5,
+                  eyeLook: 1.0,
+                };
+                setExpressionMultipliers(defaultMultipliers);
+                faceCalculatorRef.current.setMultipliers(defaultMultipliers);
+              }}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-sm mt-2 transition-colors"
+            >
+              🔄 기본값으로 초기화
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 /**
- * 얼굴 추적 데이터를 VRM 아바타에 적용하는 함수
+ * 얼굴 추적 데이터를 VRM 아바타에 적용하는 함수 (FaceStateCalculator 사용)
  * @param vrm - VRM 아바타 인스턴스
- * @param landmarks - MediaPipe 얼굴 랜드마크 배열 (478개 점)
+ * @param landmarks - MediaPipe 얼굴 랜드마크 배열 (468+ 점)
+ * @param calculator - FaceStateCalculator 인스턴스
  * @param invertPitch - pitch 추적 반전 여부
  */
 function applyFaceTrackingToVRM(
   vrm: VRM,
   landmarks: Array<{ x: number; y: number; z: number }>,
+  calculator: FaceStateCalculator,
   invertPitch: boolean
 ) {
   if (!landmarks || landmarks.length === 0) return;
+  if (!vrm.expressionManager) return;
 
-  // 1. 눈 깜빡임 적용 (Eye Blink)
-  const leftEyeOpenRatio = calculateEyeOpenRatio(
-    landmarks,
-    [159, 145], // 왼쪽 눈 위
-    [23, 133] // 왼쪽 눈 아래
-  );
-  const rightEyeOpenRatio = calculateEyeOpenRatio(
-    landmarks,
-    [386, 374], // 오른쪽 눈 위
-    [253, 362] // 오른쪽 눈 아래
-  );
+  // 1. FaceStateCalculator로 얼굴 상태 계산
+  const faceState = calculator.calculateFaceState(landmarks);
 
-  // VRM 표정에 눈 깜빡임 적용 (값이 작을수록 눈을 감은 상태)
-  if (vrm.expressionManager) {
-    const leftBlinkValue = Math.max(0, 1 - leftEyeOpenRatio * 3);
-    const rightBlinkValue = Math.max(0, 1 - rightEyeOpenRatio * 3);
+  // 2. VRM 블렌드셰이프로 변환
+  const vrmMapping = mapFaceStateToVRM(faceState);
 
+  // 3. VRM에 적용
+
+  // 3-1. 입 표정 (모든 입 관련 표정 초기화 후 적용)
+  const mouthExpressions = ['neutral', 'aa', 'ih', 'ou', 'ee', 'oh'];
+  mouthExpressions.forEach((exp) => {
+    try {
+      vrm.expressionManager?.setValue(exp as VRMExpressionPresetName, 0);
+    } catch {
+      // 표정이 없는 경우 무시
+    }
+  });
+
+  try {
+    vrm.expressionManager.setValue(
+      vrmMapping.mouth.expression as VRMExpressionPresetName,
+      vrmMapping.mouth.value
+    );
+  } catch {
+    // 표정이 없는 경우 무시
+  }
+
+  // 3-2. 눈 깜빡임
+  try {
     vrm.expressionManager.setValue(
       'blinkLeft' as VRMExpressionPresetName,
-      leftBlinkValue
+      vrmMapping.blink.left
     );
     vrm.expressionManager.setValue(
       'blinkRight' as VRMExpressionPresetName,
-      rightBlinkValue
+      vrmMapping.blink.right
     );
+  } catch {
+    // 표정이 없는 경우 무시
   }
 
-  // 2. 입 벌림 적용 (Mouth Open - A shape)
-  const mouthOpenRatio = calculateMouthOpenRatio(
-    landmarks,
-    [13], // 입 위
-    [14] // 입 아래
-  );
-
-  if (vrm.expressionManager) {
-    // 입 벌림 정도를 VRM의 'aa' 표정에 적용
-    const mouthValue = Math.min(1, mouthOpenRatio * 2);
-    vrm.expressionManager.setValue('aa' as VRMExpressionPresetName, mouthValue);
+  // 3-3. 시선 방향
+  try {
+    vrm.expressionManager.setValue(
+      'lookUp' as VRMExpressionPresetName,
+      vrmMapping.look.up
+    );
+    vrm.expressionManager.setValue(
+      'lookDown' as VRMExpressionPresetName,
+      vrmMapping.look.down
+    );
+    vrm.expressionManager.setValue(
+      'lookLeft' as VRMExpressionPresetName,
+      vrmMapping.look.left
+    );
+    vrm.expressionManager.setValue(
+      'lookRight' as VRMExpressionPresetName,
+      vrmMapping.look.right
+    );
+  } catch {
+    // 표정이 없는 경우 무시
   }
 
-  // 3. 머리 회전 적용 (Head Rotation)
+  // 3-4. 감정 (미소)
+  try {
+    vrm.expressionManager.setValue(
+      'happy' as VRMExpressionPresetName,
+      vrmMapping.emotion.happy
+    );
+  } catch {
+    // 표정이 없는 경우 무시
+  }
+
+  // 4. 머리 회전 적용 (Head Rotation) - 기존 로직 유지
   if (vrm.humanoid) {
     const head = vrm.humanoid.getNormalizedBoneNode('head');
-    if (head) {
+    if (head && landmarks.length > 454) {
       // 얼굴 중심점과 좌우 랜드마크로 회전 계산
       const noseTip = landmarks[1]; // 코끝
       const leftCheek = landmarks[234]; // 왼쪽 볼
@@ -380,62 +577,6 @@ function applyFaceTrackingToVRM(
       head.rotation.z += (roll - head.rotation.z) * smoothFactor;
     }
   }
-}
-
-/**
- * 눈이 얼마나 열려있는지 비율 계산
- * @param landmarks - 얼굴 랜드마크 배열
- * @param topIndices - 눈 위쪽 랜드마크 인덱스
- * @param bottomIndices - 눈 아래쪽 랜드마크 인덱스
- * @returns 눈 열림 비율 (0: 감음, 1: 완전히 열림)
- */
-function calculateEyeOpenRatio(
-  landmarks: Array<{ x: number; y: number; z: number }>,
-  topIndices: number[],
-  bottomIndices: number[]
-): number {
-  // 눈의 세로 거리 계산
-  let topY = 0;
-  let bottomY = 0;
-
-  topIndices.forEach((idx) => (topY += landmarks[idx].y));
-  bottomIndices.forEach((idx) => (bottomY += landmarks[idx].y));
-
-  topY /= topIndices.length;
-  bottomY /= bottomIndices.length;
-
-  const distance = Math.abs(bottomY - topY);
-
-  // 정규화 (일반적인 눈 열림 거리를 1.0으로)
-  return distance / 0.02; // 임계값은 조정 가능
-}
-
-/**
- * 입이 얼마나 열려있는지 비율 계산
- * @param landmarks - 얼굴 랜드마크 배열
- * @param topIndices - 입 위쪽 랜드마크 인덱스
- * @param bottomIndices - 입 아래쪽 랜드마크 인덱스
- * @returns 입 열림 비율 (0: 닫힘, 1: 열림)
- */
-function calculateMouthOpenRatio(
-  landmarks: Array<{ x: number; y: number; z: number }>,
-  topIndices: number[],
-  bottomIndices: number[]
-): number {
-  // 입의 세로 거리 계산
-  let topY = 0;
-  let bottomY = 0;
-
-  topIndices.forEach((idx) => (topY += landmarks[idx].y));
-  bottomIndices.forEach((idx) => (bottomY += landmarks[idx].y));
-
-  topY /= topIndices.length;
-  bottomY /= bottomIndices.length;
-
-  const distance = Math.abs(bottomY - topY);
-
-  // 정규화
-  return distance / 0.05; // 임계값은 조정 가능
 }
 
 /**
