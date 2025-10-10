@@ -36,8 +36,7 @@ virtuber-me/
 │ ├── FaceTrackingVRMViewer.tsx # 얼굴 추적 메인 컴포넌트 (리팩토링됨 🆕)
 │ ├── MultiplayerVRMWorld.tsx # 멀티플레이어 컴포넌트 ✨
 │ ├── TrackingStatusIndicator.tsx # 추적 상태 표시 UI 🆕
-│ ├── ExpressionSettingsPanel.tsx # 표정 강도 조절 UI 🆕
-│ ├── BlendShapesMonitor.tsx # BlendShapes 실시간 모니터 🆕
+│ ├── ExpressionSettingsPanel.tsx # 통합 설정 패널 (모델 변형, 추적, 표정, BlendShapes) 🔄
 │ └── LandmarkVisualizer.tsx # 랜드마크 시각화 🆕
 ├── hooks/
 │ ├── useWebcam.ts # 웹캠 관리 훅 🆕
@@ -83,8 +82,7 @@ FaceTrackingVRMViewer.tsx (메인)
 ├─ useVRMScene() ← Three.js Scene 관리
 ├─ vrmTracking 함수들 ← 추적 데이터 적용
 ├─ TrackingStatusIndicator ← 상태 UI
-├─ ExpressionSettingsPanel ← 설정 UI
-├─ BlendShapesMonitor ← BlendShapes 모니터 🆕
+├─ ExpressionSettingsPanel ← 통합 설정 UI (모델 변형, 추적, 표정 강도, BlendShapes) 🔄
 └─ LandmarkVisualizer ← 랜드마크 시각화 🆕
 \`\`\`
 

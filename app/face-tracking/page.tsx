@@ -10,11 +10,6 @@ export default function FaceTrackingPage() {
   const [isStarted, setIsStarted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 모델 및 추적 설정 상태
-  const [mirrorMode, setMirrorMode] = useState(false);
-  const [rotateModel, setRotateModel] = useState(false);
-  const [invertPitch, setInvertPitch] = useState(false);
-
   // VRM 모델 목록 로드
   useEffect(() => {
     const loadModels = async () => {
@@ -139,115 +134,33 @@ export default function FaceTrackingPage() {
           </div>
         ) : (
           /* 얼굴 추적 화면 */
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-            {/* VRM 뷰어 영역 */}
-            <div className="lg:col-span-3">
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-                <div className="flex justify-center items-center bg-gradient-to-br from-purple-50 to-pink-50 dark:from-gray-900 dark:to-gray-800 rounded-lg p-4">
-                  <FaceTrackingVRMViewer
-                    modelPath={selectedModel}
-                    width={600}
-                    height={600}
-                    className="rounded-lg"
-                    mirrorMode={mirrorMode}
-                    rotateModel={rotateModel}
-                    invertPitch={invertPitch}
-                  />
-                </div>
+          <div className="max-w-4xl mx-auto">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+              <div className="flex justify-center items-center bg-gradient-to-br from-purple-50 to-pink-50 dark:from-gray-900 dark:to-gray-800 rounded-lg p-4">
+                <FaceTrackingVRMViewer
+                  modelPath={selectedModel}
+                  width={600}
+                  height={600}
+                  className="rounded-lg"
+                />
               </div>
             </div>
 
-            {/* 컨트롤 패널 */}
-            <div className="space-y-4">
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-                <h3 className="text-lg font-bold mb-3">상태</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between p-2 bg-green-50 dark:bg-green-900/20 rounded">
-                    <span className="text-sm">웹캠</span>
-                    <span className="text-xs px-2 py-1 bg-green-500 text-white rounded">
-                      ON
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between p-2 bg-green-50 dark:bg-green-900/20 rounded">
-                    <span className="text-sm">추적</span>
-                    <span className="text-xs px-2 py-1 bg-green-500 text-white rounded">
-                      ON
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-                <h3 className="text-lg font-bold mb-3">모델</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
-                  {models.find((m) => m.path === selectedModel)?.name ||
-                    'Unknown'}
-                </p>
-              </div>
-
-              {/* 모델 및 추적 설정 */}
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-                <h3 className="text-lg font-bold mb-4">🔄 설정</h3>
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
-                      모델 변형
-                    </p>
-                    <div className="space-y-2">
-                      <label className="flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={rotateModel}
-                          onChange={(e) => setRotateModel(e.target.checked)}
-                          className="w-4 h-4 text-pink-600 bg-gray-100 border-gray-300 rounded focus:ring-pink-500 dark:focus:ring-pink-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                        />
-                        <span className="ml-3 text-sm font-medium text-gray-900 dark:text-gray-300">
-                          모델 180° 회전
-                        </span>
-                      </label>
-
-                      <label className="flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={mirrorMode}
-                          onChange={(e) => setMirrorMode(e.target.checked)}
-                          className="w-4 h-4 text-pink-600 bg-gray-100 border-gray-300 rounded focus:ring-pink-500 dark:focus:ring-pink-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                        />
-                        <span className="ml-3 text-sm font-medium text-gray-900 dark:text-gray-300">
-                          좌우 미러
-                        </span>
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
-                    <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
-                      추적 반전
-                    </p>
-                    <label className="flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={invertPitch}
-                        onChange={(e) => setInvertPitch(e.target.checked)}
-                        className="w-4 h-4 text-pink-600 bg-gray-100 border-gray-300 rounded focus:ring-pink-500 dark:focus:ring-pink-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                      />
-                      <span className="ml-3 text-sm font-medium text-gray-900 dark:text-gray-300">
-                        위아래 반전
-                      </span>
-                    </label>
-                    <p className="mt-1 ml-7 text-xs text-gray-500 dark:text-gray-400">
-                      고개가 반대로 움직이면 체크
-                    </p>
-                  </div>
-                </div>
-              </div>
-
+            {/* 종료 버튼 */}
+            <div className="mt-4 text-center">
               <button
                 onClick={() => setIsStarted(false)}
-                className="w-full bg-gray-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-gray-600 transition-all"
+                className="bg-gray-500 hover:bg-gray-600 text-white font-medium py-2 px-8 rounded-lg transition-all shadow-lg"
               >
-                종료
+                종료하기
               </button>
+            </div>
+
+            {/* 안내 */}
+            <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+              <p className="text-sm text-blue-900 dark:text-blue-300 text-center">
+                💡 설정은 우측 상단 <strong>⚙️ 설정</strong> 버튼을 클릭하세요
+              </p>
             </div>
           </div>
         )}

@@ -18,7 +18,6 @@ import TrackingStatusIndicator from './TrackingStatusIndicator';
 import ExpressionSettingsPanel, {
   type ExpressionMultipliers,
 } from './ExpressionSettingsPanel';
-import BlendShapesMonitor from './BlendShapesMonitor';
 import LandmarkVisualizer from './LandmarkVisualizer';
 
 export default function FaceTrackingVRMViewer({
@@ -26,9 +25,9 @@ export default function FaceTrackingVRMViewer({
   className = '',
   width = 800,
   height = 600,
-  mirrorMode = false,
-  rotateModel = false,
-  invertPitch = false,
+  mirrorMode: initialMirrorMode = false,
+  rotateModel: initialRotateModel = false,
+  invertPitch: initialInvertPitch = false,
 }: FaceTrackingVRMViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -38,6 +37,7 @@ export default function FaceTrackingVRMViewer({
   const [enableBodyTracking, setEnableBodyTracking] = useState(false);
   const [enableHandTracking, setEnableHandTracking] = useState(false);
   const [showLandmarks, setShowLandmarks] = useState(false);
+  const [showBlendShapes, setShowBlendShapes] = useState(false);
   const [isFaceLandmarkerReady, setIsFaceLandmarkerReady] = useState(false);
   const [isVRMLoaded, setIsVRMLoaded] = useState(false);
   const [blendShapesData, setBlendShapesData] =
@@ -55,6 +55,11 @@ export default function FaceTrackingVRMViewer({
       blink: 1.5,
       eyeLook: 1.0,
     });
+
+  // 모델 변형 설정 (내부 state로 관리)
+  const [mirrorMode, setMirrorMode] = useState(initialMirrorMode);
+  const [rotateModel, setRotateModel] = useState(initialRotateModel);
+  const [invertPitch, setInvertPitch] = useState(initialInvertPitch);
 
   // Calculator 인스턴스
   const faceCalculatorRef = useRef(
@@ -330,7 +335,7 @@ export default function FaceTrackingVRMViewer({
         isVRMLoaded={isVRMLoaded}
       />
 
-      {/* 설정 패널 */}
+      {/* 통합 설정 패널 */}
       <ExpressionSettingsPanel
         multipliers={expressionMultipliers}
         onMultiplierChange={handleMultiplierChange}
@@ -340,26 +345,33 @@ export default function FaceTrackingVRMViewer({
         onHandTrackingChange={setEnableHandTracking}
         showLandmarks={showLandmarks}
         onShowLandmarksChange={setShowLandmarks}
+        mirrorMode={mirrorMode}
+        onMirrorModeChange={setMirrorMode}
+        rotateModel={rotateModel}
+        onRotateModelChange={setRotateModel}
+        invertPitch={invertPitch}
+        onInvertPitchChange={setInvertPitch}
+        showBlendShapes={showBlendShapes}
+        onShowBlendShapesChange={setShowBlendShapes}
+        blendShapesData={blendShapesData}
         onReset={handleReset}
       />
 
-      {/* BlendShapes 모니터 */}
-      <BlendShapesMonitor blendShapes={blendShapesData} threshold={0.1} />
-
-      {/* 랜드마크 시각화 (웹캠 비디오 프리뷰) */}
+      {/* 랜드마크 시각화 (웹캠 비디오 프리뷰) - 좌측 하단으로 이동 */}
       {showLandmarks && videoRef.current && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
+        <div className="fixed bottom-4 left-4 z-50">
           <div className="relative">
-            {/* 웹캠 프리뷰 */}
+            {/* 웹캠 프리뷰 (더 작은 크기) */}
             <div
               className="relative"
               style={{
-                width: '320px',
-                height: '240px',
+                width: '240px',
+                height: '180px',
                 borderRadius: '8px',
                 border: '2px solid rgba(255,255,255,0.3)',
                 overflow: 'hidden',
                 backgroundColor: '#000',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
               }}
             >
               <video
@@ -374,8 +386,8 @@ export default function FaceTrackingVRMViewer({
                 playsInline
                 muted
                 autoPlay
-                width={320}
-                height={240}
+                width={240}
+                height={180}
                 style={{
                   width: '100%',
                   height: '100%',
@@ -387,8 +399,8 @@ export default function FaceTrackingVRMViewer({
                 <LandmarkVisualizer
                   videoRef={videoRef}
                   landmarks={currentLandmarks}
-                  width={320}
-                  height={240}
+                  width={240}
+                  height={180}
                   enabled={showLandmarks}
                 />
               </div>
