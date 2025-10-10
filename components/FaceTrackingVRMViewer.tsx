@@ -2,19 +2,21 @@
 
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import {
-  VRM,
-  VRMLoaderPlugin,
-  VRMUtils,
-  VRMExpressionPresetName,
-} from '@pixiv/three-vrm';
 import type { FaceTrackingVRMViewerProps } from '../types/components';
-import {
-  FaceStateCalculator,
-  mapFaceStateToVRM,
-} from '../utils/faceStateCalculator';
+import { FaceStateCalculator } from '../utils/faceStateCalculator';
 import { BodyStateCalculator } from '../utils/bodyStateCalculator';
+import { useWebcam } from '../hooks/useWebcam';
+import { useMediaPipeLandmarkers } from '../hooks/useMediaPipeLandmarkers';
+import { useVRMScene } from '../hooks/useVRMScene';
+import {
+  applyFaceTrackingToVRM,
+  applyBodyTrackingToVRM,
+  applyHandTrackingToVRM,
+} from '../utils/vrmTracking';
+import TrackingStatusIndicator from './TrackingStatusIndicator';
+import ExpressionSettingsPanel, {
+  type ExpressionMultipliers,
+} from './ExpressionSettingsPanel';
 
 export default function FaceTrackingVRMViewer({
   modelPath,
@@ -26,291 +28,76 @@ export default function FaceTrackingVRMViewer({
   invertPitch = false,
 }: FaceTrackingVRMViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const vrmRef = useRef<VRM | null>(null);
-  const [isWebcamReady, setIsWebcamReady] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const faceLandmarkerRef = useRef<unknown>(null);
-  const poseLandmarkerRef = useRef<unknown>(null);
-  const handLandmarkerRef = useRef<unknown>(null);
   const animationFrameRef = useRef<number | null>(null);
 
-  // FaceStateCalculator 인스턴스 (스무딩 강도: 0.7, 눈 깜빡임 강도: 1.5)
+  // 상태 관리
+  const [error, setError] = useState<string | null>(null);
+  const [enableBodyTracking, setEnableBodyTracking] = useState(false);
+  const [enableHandTracking, setEnableHandTracking] = useState(false);
+  const [expressionMultipliers, setExpressionMultipliers] =
+    useState<ExpressionMultipliers>({
+      mouthOpen: 1.0,
+      mouthWidth: 1.0,
+      mouthSmile: 1.0,
+      blink: 1.5,
+      eyeLook: 1.0,
+    });
+
+  // Calculator 인스턴스
   const faceCalculatorRef = useRef(
     new FaceStateCalculator({
       smoothingFactor: 0.7,
-      multipliers: { blink: 1.5 }, // 기본 눈 깜빡임 강도 1.5배
+      multipliers: { blink: 1.5 },
     })
   );
-
-  // BodyStateCalculator 인스턴스
   const bodyCalculatorRef = useRef(new BodyStateCalculator());
 
-  // 표정 강도 조절 상태
-  const [expressionMultipliers, setExpressionMultipliers] = useState({
-    mouthOpen: 1.0,
-    mouthWidth: 1.0,
-    mouthSmile: 1.0,
-    blink: 1.5, // 기본값 1.5배
-    eyeLook: 1.0,
+  // Custom Hooks
+  const { videoRef, isReady: isWebcamReady, error: webcamError } = useWebcam();
+
+  const { faceLandmarkerRef, poseLandmarkerRef, handLandmarkerRef } =
+    useMediaPipeLandmarkers({
+      isWebcamReady,
+      enableFace: true,
+      enableBody: enableBodyTracking,
+      enableHand: enableHandTracking,
+    });
+
+  const { vrmRef, rendererRef, sceneRef, cameraRef } = useVRMScene({
+    canvasRef,
+    modelPath,
+    width,
+    height,
+    mirrorMode,
+    rotateModel,
+    onError: setError,
   });
 
-  const [showSettings, setShowSettings] = useState(false);
-  const [enableBodyTracking, setEnableBodyTracking] = useState(false);
-  const [enableHandTracking, setEnableHandTracking] = useState(false);
-
-  // 웹캠 스트림 초기화
+  // 에러 동기화
   useEffect(() => {
-    let stream: MediaStream | null = null;
+    if (webcamError) setError(webcamError);
+  }, [webcamError]);
 
-    const initWebcam = async () => {
-      try {
-        // 웹캠 권한 요청 및 스트림 획득
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: 640,
-            height: 480,
-            facingMode: 'user', // 전면 카메라 사용
-          },
-        });
-
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.onloadedmetadata = () => {
-            videoRef.current?.play();
-            setIsWebcamReady(true);
-          };
-        }
-      } catch (err) {
-        console.error('웹캠 초기화 실패:', err);
-        setError('웹캠에 접근할 수 없습니다. 권한을 확인해주세요.');
-      }
-    };
-
-    initWebcam();
-
-    // 클린업: 웹캠 스트림 종료
-    return () => {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
-      }
-    };
-  }, []);
-
-  // MediaPipe Face Landmarker 초기화
+  // 애니메이션 루프
   useEffect(() => {
-    if (!isWebcamReady) return;
+    if (
+      !vrmRef.current ||
+      !rendererRef.current ||
+      !sceneRef.current ||
+      !cameraRef.current
+    )
+      return;
 
-    const initFaceLandmarker = async () => {
-      try {
-        // MediaPipe 동적 임포트 (빌드 에러 방지)
-        const { FaceLandmarker, FilesetResolver } = await import(
-          '@mediapipe/tasks-vision'
-        );
-
-        // MediaPipe WASM 파일 로드
-        const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
-        );
-
-        // Face Landmarker 생성 - 얼굴 랜드마크 검출기
-        const landmarker = await FaceLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath:
-              'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
-            delegate: 'CPU', // CPU 사용 (안정적)
-          },
-          outputFaceBlendshapes: true, // 표정 블렌드쉐이프 출력
-          outputFacialTransformationMatrixes: true, // 얼굴 변환 행렬 출력
-          runningMode: 'VIDEO', // 비디오 모드로 실행
-          numFaces: 1, // 한 명의 얼굴만 추적
-        });
-
-        faceLandmarkerRef.current = landmarker;
-        console.log('MediaPipe Face Landmarker 초기화 완료');
-      } catch (err) {
-        console.error('MediaPipe 초기화 실패:', err);
-        setError('얼굴 추적 초기화에 실패했습니다.');
-      }
-    };
-
-    initFaceLandmarker();
-
-    return () => {
-      // 클린업: Face Landmarker 해제
-      if (
-        faceLandmarkerRef.current &&
-        typeof faceLandmarkerRef.current === 'object' &&
-        'close' in faceLandmarkerRef.current
-      ) {
-        (faceLandmarkerRef.current as { close: () => void }).close();
-        faceLandmarkerRef.current = null;
-      }
-    };
-  }, [isWebcamReady]);
-
-  // MediaPipe Pose Landmarker 초기화 (상체 추적)
-  useEffect(() => {
-    if (!isWebcamReady || !enableBodyTracking) return;
-
-    const initPoseLandmarker = async () => {
-      try {
-        const { PoseLandmarker, FilesetResolver } = await import(
-          '@mediapipe/tasks-vision'
-        );
-
-        const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
-        );
-
-        const landmarker = await PoseLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath:
-              'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-            delegate: 'CPU',
-          },
-          runningMode: 'VIDEO',
-          numPoses: 1,
-        });
-
-        poseLandmarkerRef.current = landmarker;
-        console.log('MediaPipe Pose Landmarker 초기화 완료');
-      } catch (err) {
-        console.error('Pose Landmarker 초기화 실패:', err);
-      }
-    };
-
-    initPoseLandmarker();
-
-    return () => {
-      if (
-        poseLandmarkerRef.current &&
-        typeof poseLandmarkerRef.current === 'object' &&
-        'close' in poseLandmarkerRef.current
-      ) {
-        (poseLandmarkerRef.current as { close: () => void }).close();
-        poseLandmarkerRef.current = null;
-      }
-    };
-  }, [isWebcamReady, enableBodyTracking]);
-
-  // MediaPipe Hand Landmarker 초기화 (손 추적)
-  useEffect(() => {
-    if (!isWebcamReady || !enableHandTracking) return;
-
-    const initHandLandmarker = async () => {
-      try {
-        const { HandLandmarker, FilesetResolver } = await import(
-          '@mediapipe/tasks-vision'
-        );
-
-        const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
-        );
-
-        const landmarker = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath:
-              'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-            delegate: 'CPU',
-          },
-          runningMode: 'VIDEO',
-          numHands: 2,
-        });
-
-        handLandmarkerRef.current = landmarker;
-        console.log('MediaPipe Hand Landmarker 초기화 완료');
-      } catch (err) {
-        console.error('Hand Landmarker 초기화 실패:', err);
-      }
-    };
-
-    initHandLandmarker();
-
-    return () => {
-      if (
-        handLandmarkerRef.current &&
-        typeof handLandmarkerRef.current === 'object' &&
-        'close' in handLandmarkerRef.current
-      ) {
-        (handLandmarkerRef.current as { close: () => void }).close();
-        handLandmarkerRef.current = null;
-      }
-    };
-  }, [isWebcamReady, enableHandTracking]);
-
-  // Three.js 및 VRM 초기화
-  useEffect(() => {
-    if (!canvasRef.current) return;
-
-    // Three.js 렌더러 초기화 - 투명 배경
-    const renderer = new THREE.WebGLRenderer({
-      canvas: canvasRef.current,
-      alpha: true, // 투명 배경
-      antialias: true, // 안티앨리어싱
-    });
-    renderer.setSize(width, height);
-    renderer.setPixelRatio(window.devicePixelRatio);
-
-    // 씬 생성
-    const scene = new THREE.Scene();
-
-    // 카메라 설정
-    const camera = new THREE.PerspectiveCamera(30, width / height, 0.1, 100);
-    camera.position.set(0, 1.4, 3);
-
-    // 조명 설정
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
-    directionalLight.position.set(1, 1, 1).normalize();
-    scene.add(directionalLight);
-
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    scene.add(ambientLight);
-
-    // GLTF Loader로 VRM 모델 로드
-    const loader = new GLTFLoader();
-    loader.register((parser) => new VRMLoaderPlugin(parser));
-
-    loader.load(
-      modelPath,
-      (gltf) => {
-        const vrm = gltf.userData.vrm as VRM;
-        vrmRef.current = vrm;
-
-        // VRM 최적화
-        VRMUtils.removeUnnecessaryVertices(gltf.scene);
-        VRMUtils.removeUnnecessaryJoints(gltf.scene);
-
-        scene.add(vrm.scene);
-
-        // 모델 변형 적용
-        applyTransforms(vrm.scene, mirrorMode, rotateModel);
-
-        console.log('VRM 모델 로드 완료');
-      },
-      (progress) => {
-        const percentComplete = (progress.loaded / progress.total) * 100 || 0;
-        console.log(`VRM 로딩: ${percentComplete.toFixed(2)}%`);
-      },
-      (error) => {
-        console.error('VRM 로드 실패:', error);
-        setError('VRM 모델을 로드할 수 없습니다.');
-      }
-    );
-
-    // 시계 객체
     const clock = new THREE.Clock();
     let lastVideoTime = -1;
 
-    // 애니메이션 루프
     const animate = () => {
       animationFrameRef.current = requestAnimationFrame(animate);
 
       const deltaTime = clock.getDelta();
 
-      // VRM 업데이트
       if (vrmRef.current) {
-        // 얼굴 추적 데이터 처리
+        // 얼굴 추적
         if (
           faceLandmarkerRef.current &&
           videoRef.current &&
@@ -319,7 +106,6 @@ export default function FaceTrackingVRMViewer({
           lastVideoTime = videoRef.current.currentTime;
 
           try {
-            // MediaPipe로 얼굴 랜드마크 검출
             const result = (
               faceLandmarkerRef.current as {
                 detectForVideo: (
@@ -333,8 +119,7 @@ export default function FaceTrackingVRMViewer({
               }
             ).detectForVideo(videoRef.current, performance.now());
 
-            if (result && result.faceLandmarks && result.faceLandmarks[0]) {
-              // 얼굴 추적 데이터를 VRM에 적용 (FaceStateCalculator 사용)
+            if (result?.faceLandmarks?.[0]) {
               applyFaceTrackingToVRM(
                 vrmRef.current,
                 result.faceLandmarks[0],
@@ -343,11 +128,11 @@ export default function FaceTrackingVRMViewer({
               );
             }
           } catch {
-            // 추적 실패 시 무시 (성능을 위해 로그 최소화)
+            // 추적 실패 무시
           }
         }
 
-        // 상체 추적 데이터 처리
+        // 상체 추적
         if (
           poseLandmarkerRef.current &&
           videoRef.current &&
@@ -372,7 +157,7 @@ export default function FaceTrackingVRMViewer({
               }
             ).detectForVideo(videoRef.current, performance.now());
 
-            if (poseResult && poseResult.landmarks && poseResult.landmarks[0]) {
+            if (poseResult?.landmarks?.[0]) {
               applyBodyTrackingToVRM(
                 vrmRef.current,
                 poseResult.landmarks[0],
@@ -380,11 +165,11 @@ export default function FaceTrackingVRMViewer({
               );
             }
           } catch {
-            // 추적 실패 시 무시
+            // 추적 실패 무시
           }
         }
 
-        // 손 추적 데이터 처리
+        // 손 추적
         if (
           handLandmarkerRef.current &&
           videoRef.current &&
@@ -403,7 +188,7 @@ export default function FaceTrackingVRMViewer({
               }
             ).detectForVideo(videoRef.current, performance.now());
 
-            if (handResult && handResult.landmarks) {
+            if (handResult?.landmarks) {
               applyHandTrackingToVRM(
                 vrmRef.current,
                 handResult.landmarks,
@@ -412,53 +197,44 @@ export default function FaceTrackingVRMViewer({
               );
             }
           } catch {
-            // 추적 실패 시 무시
+            // 추적 실패 무시
           }
         }
 
-        // VRM 내부 상태 업데이트
+        // VRM 업데이트
         vrmRef.current.update(deltaTime);
       }
 
       // 렌더링
-      renderer.render(scene, camera);
+      if (rendererRef.current && sceneRef.current && cameraRef.current) {
+        rendererRef.current.render(sceneRef.current, cameraRef.current);
+      }
     };
 
     animate();
 
-    // 클린업
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
-      if (vrmRef.current) {
-        scene.remove(vrmRef.current.scene);
-        VRMUtils.deepDispose(vrmRef.current.scene);
-        vrmRef.current = null;
-      }
-      renderer.dispose();
     };
   }, [
-    modelPath,
-    width,
-    height,
-    mirrorMode,
-    rotateModel,
+    vrmRef,
+    rendererRef,
+    sceneRef,
+    cameraRef,
+    videoRef,
+    faceLandmarkerRef,
+    poseLandmarkerRef,
+    handLandmarkerRef,
     invertPitch,
     enableBodyTracking,
     enableHandTracking,
   ]);
 
-  // 모델이 로드된 후 변형 상태가 변경되면 적용
-  useEffect(() => {
-    if (vrmRef.current) {
-      applyTransforms(vrmRef.current.scene, mirrorMode, rotateModel);
-    }
-  }, [mirrorMode, rotateModel]);
-
   // 표정 강도 변경 핸들러
   const handleMultiplierChange = (
-    key: keyof typeof expressionMultipliers,
+    key: keyof ExpressionMultipliers,
     value: number
   ) => {
     const newMultipliers = {
@@ -469,9 +245,21 @@ export default function FaceTrackingVRMViewer({
     faceCalculatorRef.current.setMultipliers(newMultipliers);
   };
 
+  const handleReset = () => {
+    const defaultMultipliers: ExpressionMultipliers = {
+      mouthOpen: 1.0,
+      mouthWidth: 1.0,
+      mouthSmile: 1.0,
+      blink: 1.5,
+      eyeLook: 1.0,
+    };
+    setExpressionMultipliers(defaultMultipliers);
+    faceCalculatorRef.current.setMultipliers(defaultMultipliers);
+  };
+
   return (
     <div className="relative">
-      {/* 웹캠 비디오 (숨김 처리) */}
+      {/* 웹캠 비디오 (숨김) */}
       <video
         ref={videoRef}
         className="hidden"
@@ -493,459 +281,22 @@ export default function FaceTrackingVRMViewer({
       />
 
       {/* 상태 표시 */}
-      <div className="absolute top-4 left-4 bg-black/50 text-white px-3 py-2 rounded-lg text-sm">
-        {error ? (
-          <span className="text-red-400">❌ {error}</span>
-        ) : !isWebcamReady ? (
-          <span>📷 웹캠 초기화 중...</span>
-        ) : !faceLandmarkerRef.current ? (
-          <span>🔄 얼굴 추적 초기화 중...</span>
-        ) : (
-          <span className="text-green-400">✅ 추적 활성화</span>
-        )}
-      </div>
+      <TrackingStatusIndicator
+        error={error}
+        isWebcamReady={isWebcamReady}
+        isFaceLandmarkerReady={!!faceLandmarkerRef.current}
+      />
 
-      {/* 표정 강도 조절 패널 */}
-      <div className="absolute top-4 right-4">
-        <button
-          onClick={() => setShowSettings(!showSettings)}
-          className="bg-black/50 hover:bg-black/70 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-        >
-          ⚙️ 표정 강도 조절
-        </button>
-
-        {showSettings && (
-          <div className="mt-2 bg-black/90 text-white p-4 rounded-lg text-sm w-64 space-y-3">
-            <h3 className="font-bold text-base mb-3">추적 설정</h3>
-
-            {/* 상체 추적 토글 */}
-            <div className="flex items-center justify-between pb-2 border-b border-gray-600">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={enableBodyTracking}
-                  onChange={(e) => setEnableBodyTracking(e.target.checked)}
-                  className="w-4 h-4"
-                />
-                <span>🙆 상체 추적</span>
-              </label>
-              <span className="text-xs text-gray-400">
-                {enableBodyTracking ? 'ON' : 'OFF'}
-              </span>
-            </div>
-
-            {/* 손 추적 토글 */}
-            <div className="flex items-center justify-between pb-3 border-b border-gray-600">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={enableHandTracking}
-                  onChange={(e) => setEnableHandTracking(e.target.checked)}
-                  className="w-4 h-4"
-                />
-                <span>✋ 손 추적</span>
-              </label>
-              <span className="text-xs text-gray-400">
-                {enableHandTracking ? 'ON' : 'OFF'}
-              </span>
-            </div>
-
-            <h4 className="font-semibold text-sm mt-3 mb-2">표정 강도</h4>
-
-            {/* 눈 깜빡임 강도 */}
-            <div>
-              <label className="flex justify-between mb-1">
-                <span>👁️ 눈 깜빡임</span>
-                <span className="text-yellow-400">
-                  {expressionMultipliers.blink.toFixed(1)}x
-                </span>
-              </label>
-              <input
-                type="range"
-                min="0.5"
-                max="3.0"
-                step="0.1"
-                value={expressionMultipliers.blink}
-                onChange={(e) =>
-                  handleMultiplierChange('blink', parseFloat(e.target.value))
-                }
-                className="w-full"
-              />
-            </div>
-
-            {/* 입 벌림 강도 */}
-            <div>
-              <label className="flex justify-between mb-1">
-                <span>👄 입 벌림</span>
-                <span className="text-yellow-400">
-                  {expressionMultipliers.mouthOpen.toFixed(1)}x
-                </span>
-              </label>
-              <input
-                type="range"
-                min="0.5"
-                max="2.0"
-                step="0.1"
-                value={expressionMultipliers.mouthOpen}
-                onChange={(e) =>
-                  handleMultiplierChange(
-                    'mouthOpen',
-                    parseFloat(e.target.value)
-                  )
-                }
-                className="w-full"
-              />
-            </div>
-
-            {/* 미소 강도 */}
-            <div>
-              <label className="flex justify-between mb-1">
-                <span>😊 미소</span>
-                <span className="text-yellow-400">
-                  {expressionMultipliers.mouthSmile.toFixed(1)}x
-                </span>
-              </label>
-              <input
-                type="range"
-                min="0.5"
-                max="2.0"
-                step="0.1"
-                value={expressionMultipliers.mouthSmile}
-                onChange={(e) =>
-                  handleMultiplierChange(
-                    'mouthSmile',
-                    parseFloat(e.target.value)
-                  )
-                }
-                className="w-full"
-              />
-            </div>
-
-            {/* 시선 강도 */}
-            <div>
-              <label className="flex justify-between mb-1">
-                <span>👀 시선</span>
-                <span className="text-yellow-400">
-                  {expressionMultipliers.eyeLook.toFixed(1)}x
-                </span>
-              </label>
-              <input
-                type="range"
-                min="0.5"
-                max="2.0"
-                step="0.1"
-                value={expressionMultipliers.eyeLook}
-                onChange={(e) =>
-                  handleMultiplierChange('eyeLook', parseFloat(e.target.value))
-                }
-                className="w-full"
-              />
-            </div>
-
-            {/* 초기화 버튼 */}
-            <button
-              onClick={() => {
-                const defaultMultipliers = {
-                  mouthOpen: 1.0,
-                  mouthWidth: 1.0,
-                  mouthSmile: 1.0,
-                  blink: 1.5,
-                  eyeLook: 1.0,
-                };
-                setExpressionMultipliers(defaultMultipliers);
-                faceCalculatorRef.current.setMultipliers(defaultMultipliers);
-              }}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-sm mt-2 transition-colors"
-            >
-              🔄 기본값으로 초기화
-            </button>
-          </div>
-        )}
-      </div>
+      {/* 설정 패널 */}
+      <ExpressionSettingsPanel
+        multipliers={expressionMultipliers}
+        onMultiplierChange={handleMultiplierChange}
+        enableBodyTracking={enableBodyTracking}
+        onBodyTrackingChange={setEnableBodyTracking}
+        enableHandTracking={enableHandTracking}
+        onHandTrackingChange={setEnableHandTracking}
+        onReset={handleReset}
+      />
     </div>
   );
-}
-
-/**
- * 얼굴 추적 데이터를 VRM 아바타에 적용하는 함수 (FaceStateCalculator 사용)
- * @param vrm - VRM 아바타 인스턴스
- * @param landmarks - MediaPipe 얼굴 랜드마크 배열 (468+ 점)
- * @param calculator - FaceStateCalculator 인스턴스
- * @param invertPitch - pitch 추적 반전 여부
- */
-function applyFaceTrackingToVRM(
-  vrm: VRM,
-  landmarks: Array<{ x: number; y: number; z: number }>,
-  calculator: FaceStateCalculator,
-  invertPitch: boolean
-) {
-  if (!landmarks || landmarks.length === 0) return;
-  if (!vrm.expressionManager) return;
-
-  // 1. FaceStateCalculator로 얼굴 상태 계산
-  const faceState = calculator.calculateFaceState(landmarks);
-
-  // 2. VRM 블렌드셰이프로 변환
-  const vrmMapping = mapFaceStateToVRM(faceState);
-
-  // 3. VRM에 적용
-
-  // 3-1. 입 표정 (블렌딩 방식으로 여러 표정 동시 적용)
-  Object.entries(vrmMapping.mouth).forEach(([expression, value]) => {
-    try {
-      if (value > 0.01) {
-        // 0.01 이상인 값만 적용 (미세한 값 무시)
-        vrm.expressionManager?.setValue(
-          expression as VRMExpressionPresetName,
-          value as number
-        );
-      } else {
-        // 0에 가까우면 명시적으로 0 설정
-        vrm.expressionManager?.setValue(
-          expression as VRMExpressionPresetName,
-          0
-        );
-      }
-    } catch {
-      // 표정이 없는 경우 무시
-    }
-  });
-
-  // 3-2. 눈 깜빡임
-  try {
-    vrm.expressionManager.setValue(
-      'blinkLeft' as VRMExpressionPresetName,
-      vrmMapping.blink.left
-    );
-    vrm.expressionManager.setValue(
-      'blinkRight' as VRMExpressionPresetName,
-      vrmMapping.blink.right
-    );
-  } catch {
-    // 표정이 없는 경우 무시
-  }
-
-  // 3-3. 시선 방향
-  try {
-    vrm.expressionManager.setValue(
-      'lookUp' as VRMExpressionPresetName,
-      vrmMapping.look.up
-    );
-    vrm.expressionManager.setValue(
-      'lookDown' as VRMExpressionPresetName,
-      vrmMapping.look.down
-    );
-    vrm.expressionManager.setValue(
-      'lookLeft' as VRMExpressionPresetName,
-      vrmMapping.look.left
-    );
-    vrm.expressionManager.setValue(
-      'lookRight' as VRMExpressionPresetName,
-      vrmMapping.look.right
-    );
-  } catch {
-    // 표정이 없는 경우 무시
-  }
-
-  // 3-4. 감정 (미소)
-  try {
-    vrm.expressionManager.setValue(
-      'happy' as VRMExpressionPresetName,
-      vrmMapping.emotion.happy
-    );
-  } catch {
-    // 표정이 없는 경우 무시
-  }
-
-  // 4. 머리 회전 적용 (Head Rotation) - 기존 로직 유지
-  if (vrm.humanoid) {
-    const head = vrm.humanoid.getNormalizedBoneNode('head');
-    if (head && landmarks.length > 454) {
-      // 얼굴 중심점과 좌우 랜드마크로 회전 계산
-      const noseTip = landmarks[1]; // 코끝
-      const leftCheek = landmarks[234]; // 왼쪽 볼
-      const rightCheek = landmarks[454]; // 오른쪽 볼
-
-      // Yaw (좌우 회전) 계산
-      const yaw =
-        Math.atan2(rightCheek.x - leftCheek.x, rightCheek.z - leftCheek.z) -
-        Math.PI / 2;
-
-      // Pitch (위아래 회전) 계산
-      let pitch = (noseTip.y - 0.5) * 1.5;
-      if (invertPitch) {
-        pitch = -pitch; // pitch 반전
-      }
-
-      // Roll (기울임) 계산
-      const roll =
-        Math.atan2(rightCheek.y - leftCheek.y, rightCheek.x - leftCheek.x) *
-        0.5;
-
-      // 회전 값을 부드럽게 적용 (Lerp)
-      const smoothFactor = 0.3;
-      head.rotation.y += (yaw - head.rotation.y) * smoothFactor;
-      head.rotation.x += (pitch - head.rotation.x) * smoothFactor;
-      head.rotation.z += (roll - head.rotation.z) * smoothFactor;
-    }
-  }
-}
-
-/**
- * 상체 추적 데이터를 VRM 아바타에 적용하는 함수
- * @param vrm - VRM 아바타 인스턴스
- * @param landmarks - MediaPipe Pose 랜드마크 배열
- * @param calculator - BodyStateCalculator 인스턴스
- */
-function applyBodyTrackingToVRM(
-  vrm: VRM,
-  landmarks: Array<{ x: number; y: number; z: number; visibility?: number }>,
-  calculator: import('../utils/bodyStateCalculator').BodyStateCalculator
-) {
-  if (!landmarks || landmarks.length === 0) return;
-  if (!vrm.humanoid) return;
-
-  const bodyState = calculator.calculateBodyState(landmarks);
-  if (!bodyState) return;
-
-  // 상체 본 적용 (부드러운 전환)
-  const smoothFactor = 0.2;
-
-  // 척추
-  const spine = vrm.humanoid.getNormalizedBoneNode('spine');
-  if (spine) {
-    spine.rotation.x += (bodyState.spine.x - spine.rotation.x) * smoothFactor;
-    spine.rotation.z += (bodyState.spine.z - spine.rotation.z) * smoothFactor;
-  }
-
-  // 가슴
-  const chest = vrm.humanoid.getNormalizedBoneNode('chest');
-  if (chest) {
-    chest.rotation.x += (bodyState.chest.x - chest.rotation.x) * smoothFactor;
-    chest.rotation.z += (bodyState.chest.z - chest.rotation.z) * smoothFactor;
-  }
-
-  // 왼팔
-  const leftUpperArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
-  if (leftUpperArm) {
-    leftUpperArm.rotation.x +=
-      (bodyState.leftUpperArm.x - leftUpperArm.rotation.x) * smoothFactor;
-    leftUpperArm.rotation.y +=
-      (bodyState.leftUpperArm.y - leftUpperArm.rotation.y) * smoothFactor;
-  }
-
-  const leftLowerArm = vrm.humanoid.getNormalizedBoneNode('leftLowerArm');
-  if (leftLowerArm) {
-    leftLowerArm.rotation.z +=
-      (bodyState.leftLowerArm.z - leftLowerArm.rotation.z) * smoothFactor;
-  }
-
-  // 오른팔
-  const rightUpperArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
-  if (rightUpperArm) {
-    rightUpperArm.rotation.x +=
-      (bodyState.rightUpperArm.x - rightUpperArm.rotation.x) * smoothFactor;
-    rightUpperArm.rotation.y +=
-      (bodyState.rightUpperArm.y - rightUpperArm.rotation.y) * smoothFactor;
-  }
-
-  const rightLowerArm = vrm.humanoid.getNormalizedBoneNode('rightLowerArm');
-  if (rightLowerArm) {
-    rightLowerArm.rotation.z +=
-      (bodyState.rightLowerArm.z - rightLowerArm.rotation.z) * smoothFactor;
-  }
-}
-
-/**
- * 손 추적 데이터를 VRM 아바타에 적용하는 함수
- * @param vrm - VRM 아바타 인스턴스
- * @param landmarks - MediaPipe Hand 랜드마크 배열
- * @param handednesses - 왼손/오른손 정보
- * @param calculator - BodyStateCalculator 인스턴스
- */
-function applyHandTrackingToVRM(
-  vrm: VRM,
-  landmarks: Array<Array<{ x: number; y: number; z: number }>>,
-  handednesses: Array<Array<{ categoryName: string }>>,
-  calculator: import('../utils/bodyStateCalculator').BodyStateCalculator
-) {
-  if (!landmarks || landmarks.length === 0) return;
-  if (!vrm.humanoid) return;
-
-  // 왼손과 오른손 랜드마크 분리
-  let leftHandLandmarks = null;
-  let rightHandLandmarks = null;
-
-  for (let i = 0; i < landmarks.length; i++) {
-    const handedness = handednesses[i]?.[0]?.categoryName;
-    if (handedness === 'Left') {
-      leftHandLandmarks = landmarks[i];
-    } else if (handedness === 'Right') {
-      rightHandLandmarks = landmarks[i];
-    }
-  }
-
-  const handState = calculator.calculateHandState(
-    leftHandLandmarks,
-    rightHandLandmarks
-  );
-
-  // 손가락 본 적용 (VRM 0.x는 손가락 본이 제한적일 수 있음)
-  const smoothFactor = 0.3;
-
-  // 왼손 손가락
-  const leftThumb = vrm.humanoid.getNormalizedBoneNode('leftThumbProximal');
-  if (leftThumb) {
-    leftThumb.rotation.z +=
-      (handState.leftThumb * 0.5 - leftThumb.rotation.z) * smoothFactor;
-  }
-
-  const leftIndex = vrm.humanoid.getNormalizedBoneNode('leftIndexProximal');
-  if (leftIndex) {
-    leftIndex.rotation.z +=
-      (handState.leftIndex * 0.5 - leftIndex.rotation.z) * smoothFactor;
-  }
-
-  const leftMiddle = vrm.humanoid.getNormalizedBoneNode('leftMiddleProximal');
-  if (leftMiddle) {
-    leftMiddle.rotation.z +=
-      (handState.leftMiddle * 0.5 - leftMiddle.rotation.z) * smoothFactor;
-  }
-
-  // 오른손 손가락
-  const rightThumb = vrm.humanoid.getNormalizedBoneNode('rightThumbProximal');
-  if (rightThumb) {
-    rightThumb.rotation.z +=
-      (handState.rightThumb * -0.5 - rightThumb.rotation.z) * smoothFactor;
-  }
-
-  const rightIndex = vrm.humanoid.getNormalizedBoneNode('rightIndexProximal');
-  if (rightIndex) {
-    rightIndex.rotation.z +=
-      (handState.rightIndex * -0.5 - rightIndex.rotation.z) * smoothFactor;
-  }
-
-  const rightMiddle = vrm.humanoid.getNormalizedBoneNode('rightMiddleProximal');
-  if (rightMiddle) {
-    rightMiddle.rotation.z +=
-      (handState.rightMiddle * -0.5 - rightMiddle.rotation.z) * smoothFactor;
-  }
-}
-
-/**
- * VRM 모델에 변형을 적용하는 함수
- * @param scene - VRM scene 객체
- * @param mirrorMode - 좌우 미러 모드
- * @param rotateModel - 모델 180도 회전
- */
-function applyTransforms(
-  scene: THREE.Group,
-  mirrorMode: boolean,
-  rotateModel: boolean
-) {
-  // 좌우 미러 (거울 모드)
-  scene.scale.x = mirrorMode ? -1 : 1;
-
-  // 모델 180도 회전 (뒤돌아 있는 경우)
-  scene.rotation.y = rotateModel ? Math.PI : 0;
 }

@@ -31,9 +31,14 @@ virtuber-me/
 │ └── api/vrm-models/ # VRM 파일 목록 API
 ├── components/
 │ ├── VRMViewer.tsx # VRM 뷰어 컴포넌트
-│ ├── FaceTrackingVRMViewer.tsx # 얼굴 추적 컴포넌트
-│ └── MultiplayerVRMWorld.tsx # 멀티플레이어 컴포넌트 ✨
+│ ├── FaceTrackingVRMViewer.tsx # 얼굴 추적 메인 컴포넌트 (리팩토링됨 🆕)
+│ ├── MultiplayerVRMWorld.tsx # 멀티플레이어 컴포넌트 ✨
+│ ├── TrackingStatusIndicator.tsx # 추적 상태 표시 UI 🆕
+│ └── ExpressionSettingsPanel.tsx # 표정 강도 조절 UI 🆕
 ├── hooks/
+│ ├── useWebcam.ts # 웹캠 관리 훅 🆕
+│ ├── useMediaPipeLandmarkers.ts # MediaPipe 초기화 훅 🆕
+│ ├── useVRMScene.ts # Three.js Scene 관리 훅 🆕
 │ ├── useFaceTracking.ts # 얼굴 추적 훅 ✨
 │ ├── useExpressionMapping.ts # 표정 매핑 훅 ✨
 │ ├── useNetworkSync.ts # 네트워크 동기화 훅 ✨
@@ -41,6 +46,8 @@ virtuber-me/
 ├── utils/
 │ ├── faceStateCalculator.ts # 정밀 얼굴 상태 계산기 🎯
 │ ├── bodyStateCalculator.ts # 상체 및 손 추적 계산기 🙆✋
+│ ├── vrmTracking.ts # VRM 추적 적용 함수 🆕
+│ ├── vrmTransforms.ts # VRM 변형 유틸 🆕
 │ └── README.md # 상세 사용법 문서
 ├── types/
 │ ├── vrm.ts # VRM 타입 정의
@@ -52,6 +59,26 @@ virtuber-me/
 │ ├── types.ts # 타입 정의
 │ └── package.json # 서버 의존성
 └── public/models/ # VRM 파일 저장
+\`\`\`
+
+### 📐 최신 아키텍처 (리팩토링됨) 🆕
+
+**컴포넌트 분리 원칙**:
+
+- **단일 책임 원칙 (SRP)**: 각 파일이 하나의 명확한 책임만 가짐
+- **재사용성**: Custom Hooks로 로직 분리 → 다른 컴포넌트에서도 사용 가능
+- **테스트 용이성**: 작은 단위로 분리되어 개별 테스트 가능
+- **가독성**: 각 파일이 200줄 이하로 유지
+
+**FaceTrackingVRMViewer 구조** (952줄 → 302줄로 축소):
+\`\`\`
+FaceTrackingVRMViewer.tsx (메인)
+├─ useWebcam() ← 웹캠 관리
+├─ useMediaPipeLandmarkers() ← MediaPipe 초기화
+├─ useVRMScene() ← Three.js Scene 관리
+├─ vrmTracking 함수들 ← 추적 데이터 적용
+├─ TrackingStatusIndicator ← 상태 UI
+└─ ExpressionSettingsPanel ← 설정 UI
 \`\`\`
 
 ## 🛠️ 설치 및 실행
