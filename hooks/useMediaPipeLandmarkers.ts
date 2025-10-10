@@ -8,6 +8,9 @@ interface UseMediaPipeLandmarkersOptions {
   enableFace?: boolean;
   enableBody?: boolean;
   enableHand?: boolean;
+  onFaceReady?: () => void;
+  onBodyReady?: () => void;
+  onHandReady?: () => void;
 }
 
 /**
@@ -18,6 +21,9 @@ export function useMediaPipeLandmarkers({
   enableFace = true,
   enableBody = false,
   enableHand = false,
+  onFaceReady,
+  onBodyReady,
+  onHandReady,
 }: UseMediaPipeLandmarkersOptions) {
   const faceLandmarkerRef = useRef<unknown>(null);
   const poseLandmarkerRef = useRef<unknown>(null);
@@ -51,6 +57,7 @@ export function useMediaPipeLandmarkers({
 
         faceLandmarkerRef.current = landmarker;
         console.log('MediaPipe Face Landmarker 초기화 완료');
+        onFaceReady?.();
       } catch (err) {
         console.error('Face Landmarker 초기화 실패:', err);
       }
@@ -96,6 +103,7 @@ export function useMediaPipeLandmarkers({
 
         poseLandmarkerRef.current = landmarker;
         console.log('MediaPipe Pose Landmarker 초기화 완료');
+        onBodyReady?.();
       } catch (err) {
         console.error('Pose Landmarker 초기화 실패:', err);
       }
@@ -141,6 +149,7 @@ export function useMediaPipeLandmarkers({
 
         handLandmarkerRef.current = landmarker;
         console.log('MediaPipe Hand Landmarker 초기화 완료');
+        onHandReady?.();
       } catch (err) {
         console.error('Hand Landmarker 초기화 실패:', err);
       }

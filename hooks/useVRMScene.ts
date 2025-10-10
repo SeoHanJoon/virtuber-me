@@ -15,6 +15,7 @@ interface UseVRMSceneOptions {
   mirrorMode: boolean;
   rotateModel: boolean;
   onError?: (message: string) => void;
+  onVRMLoaded?: () => void;
 }
 
 /**
@@ -28,6 +29,7 @@ export function useVRMScene({
   mirrorMode,
   rotateModel,
   onError,
+  onVRMLoaded,
 }: UseVRMSceneOptions) {
   const vrmRef = useRef<VRM | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -86,6 +88,7 @@ export function useVRMScene({
         applyTransforms(vrm.scene, mirrorMode, rotateModel);
 
         setIsLoaded(true);
+        onVRMLoaded?.();
         console.log('VRM 모델 로드 완료');
       },
       (progress) => {

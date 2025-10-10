@@ -2,6 +2,7 @@ interface TrackingStatusIndicatorProps {
   error: string | null;
   isWebcamReady: boolean;
   isFaceLandmarkerReady: boolean;
+  isVRMLoaded: boolean;
 }
 
 /**
@@ -11,6 +12,7 @@ export default function TrackingStatusIndicator({
   error,
   isWebcamReady,
   isFaceLandmarkerReady,
+  isVRMLoaded,
 }: TrackingStatusIndicatorProps) {
   return (
     <div className="absolute top-4 left-4 bg-black/50 text-white px-3 py-2 rounded-lg text-sm">
@@ -20,6 +22,8 @@ export default function TrackingStatusIndicator({
         <span>📷 웹캠 초기화 중...</span>
       ) : !isFaceLandmarkerReady ? (
         <span>🔄 얼굴 추적 초기화 중...</span>
+      ) : !isVRMLoaded ? (
+        <span>🎭 VRM 모델 로딩 중...</span>
       ) : (
         <span className="text-green-400">✅ 추적 활성화</span>
       )}

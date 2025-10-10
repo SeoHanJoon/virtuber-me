@@ -38,6 +38,8 @@ export default function FaceTrackingVRMViewer({
   const [enableBodyTracking, setEnableBodyTracking] = useState(false);
   const [enableHandTracking, setEnableHandTracking] = useState(false);
   const [showLandmarks, setShowLandmarks] = useState(false);
+  const [isFaceLandmarkerReady, setIsFaceLandmarkerReady] = useState(false);
+  const [isVRMLoaded, setIsVRMLoaded] = useState(false);
   const [blendShapesData, setBlendShapesData] =
     useState<BlendShapesData | null>(null);
   const [currentLandmarks, setCurrentLandmarks] = useState<Array<{
@@ -72,6 +74,7 @@ export default function FaceTrackingVRMViewer({
       enableFace: true,
       enableBody: enableBodyTracking,
       enableHand: enableHandTracking,
+      onFaceReady: () => setIsFaceLandmarkerReady(true),
     });
 
   const { vrmRef, rendererRef, sceneRef, cameraRef } = useVRMScene({
@@ -82,6 +85,7 @@ export default function FaceTrackingVRMViewer({
     mirrorMode,
     rotateModel,
     onError: setError,
+    onVRMLoaded: () => setIsVRMLoaded(true),
   });
 
   // 에러 동기화
@@ -91,13 +95,25 @@ export default function FaceTrackingVRMViewer({
 
   // 애니메이션 루프
   useEffect(() => {
+    // VRM과 렌더러가 준비될 때까지 대기
+    if (!isVRMLoaded || !isWebcamReady) {
+      console.log(
+        `[Animation] 대기 중... VRM: ${isVRMLoaded}, Webcam: ${isWebcamReady}`
+      );
+      return;
+    }
+
     if (
       !vrmRef.current ||
       !rendererRef.current ||
       !sceneRef.current ||
       !cameraRef.current
-    )
+    ) {
+      console.log('[Animation] Ref 준비 중...');
       return;
+    }
+
+    console.log('[Animation] 애니메이션 루프 시작');
 
     const clock = new THREE.Clock();
     let lastVideoTime = -1;
@@ -235,11 +251,15 @@ export default function FaceTrackingVRMViewer({
     animate();
 
     return () => {
+      console.log('[Animation] 애니메이션 루프 정리');
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
   }, [
+    isVRMLoaded, // VRM 로드 완료 감지 🆕
+    isWebcamReady, // 웹캠 준비 완료 감지 🆕
+    isFaceLandmarkerReady, // Face Landmarker 준비 완료 감지 🆕
     vrmRef,
     rendererRef,
     sceneRef,
@@ -280,12 +300,13 @@ export default function FaceTrackingVRMViewer({
 
   return (
     <div className="relative">
-      {/* 웹캠 비디오 (숨김) */}
+      {/* 웹캠 비디오 (MediaPipe용 - 항상 숨김) */}
       <video
         ref={videoRef}
         className="hidden"
         playsInline
         muted
+        autoPlay
         width={640}
         height={480}
       />
@@ -305,7 +326,8 @@ export default function FaceTrackingVRMViewer({
       <TrackingStatusIndicator
         error={error}
         isWebcamReady={isWebcamReady}
-        isFaceLandmarkerReady={!!faceLandmarkerRef.current}
+        isFaceLandmarkerReady={isFaceLandmarkerReady}
+        isVRMLoaded={isVRMLoaded}
       />
 
       {/* 설정 패널 */}
@@ -324,32 +346,56 @@ export default function FaceTrackingVRMViewer({
       {/* BlendShapes 모니터 */}
       <BlendShapesMonitor blendShapes={blendShapesData} threshold={0.1} />
 
-      {/* 랜드마크 시각화 (웹캠 비디오 위에 오버레이) */}
-      <div className="fixed top-4 left-1/2 -translate-x-1/2">
-        <div className="relative">
-          <video
-            ref={videoRef}
-            className={showLandmarks ? 'block' : 'hidden'}
-            playsInline
-            muted
-            width={320}
-            height={240}
-            style={{
-              borderRadius: '8px',
-              border: '2px solid rgba(255,255,255,0.3)',
-            }}
-          />
-          {showLandmarks && (
-            <LandmarkVisualizer
-              videoRef={videoRef}
-              landmarks={currentLandmarks}
-              width={320}
-              height={240}
-              enabled={showLandmarks}
-            />
-          )}
+      {/* 랜드마크 시각화 (웹캠 비디오 프리뷰) */}
+      {showLandmarks && videoRef.current && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
+          <div className="relative">
+            {/* 웹캠 프리뷰 */}
+            <div
+              className="relative"
+              style={{
+                width: '320px',
+                height: '240px',
+                borderRadius: '8px',
+                border: '2px solid rgba(255,255,255,0.3)',
+                overflow: 'hidden',
+                backgroundColor: '#000',
+              }}
+            >
+              <video
+                ref={(el) => {
+                  if (el && videoRef.current) {
+                    el.srcObject = videoRef.current.srcObject;
+                    el.play().catch(() => {
+                      // 자동 재생 실패 무시
+                    });
+                  }
+                }}
+                playsInline
+                muted
+                autoPlay
+                width={320}
+                height={240}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                }}
+              />
+              {/* 랜드마크 오버레이 */}
+              <div className="absolute top-0 left-0">
+                <LandmarkVisualizer
+                  videoRef={videoRef}
+                  landmarks={currentLandmarks}
+                  width={320}
+                  height={240}
+                  enabled={showLandmarks}
+                />
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
