@@ -6,6 +6,7 @@
 
 - **VRM 모델 뷰어**: 3D 아바타 확인 및 탐색
 - **실시간 얼굴 추적**: 웹캠으로 아바타 실시간 조종 (정밀 표정 인식 🎯)
+- **상체 및 손 추적**: MediaPipe Pose/Hand로 상체 움직임 및 손가락 제스처 추적 🙆✋
 - **멀티플레이어 월드**: 최대 100명이 동시 접속 가능한 VRM 아바타 월드 🎉
 - **고급 얼굴 분석**: 입 모양, 눈 깜빡임, 시선, 미소 감지 (468+ 랜드마크)
 
@@ -13,7 +14,7 @@
 
 - **Frontend**: Next.js 15 + TypeScript + Tailwind CSS 4
 - **3D 렌더링**: Three.js + @pixiv/three-vrm
-- **얼굴 추적**: MediaPipe Face Landmarker
+- **추적**: MediaPipe Face/Pose/Hand Landmarker
 - **멀티플레이어**: Socket.IO + Express
 - **코드 품질**: ESLint + Prettier + Husky
 - **Node.js**: 22.20.0
@@ -39,6 +40,7 @@ virtuber-me/
 │ └── useControls.ts # WASD 컨트롤 훅 ✨
 ├── utils/
 │ ├── faceStateCalculator.ts # 정밀 얼굴 상태 계산기 🎯
+│ ├── bodyStateCalculator.ts # 상체 및 손 추적 계산기 🙆✋
 │ └── README.md # 상세 사용법 문서
 ├── types/
 │ ├── vrm.ts # VRM 타입 정의

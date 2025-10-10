@@ -14,6 +14,7 @@ import {
   FaceStateCalculator,
   mapFaceStateToVRM,
 } from '../utils/faceStateCalculator';
+import { BodyStateCalculator } from '../utils/bodyStateCalculator';
 
 export default function FaceTrackingVRMViewer({
   modelPath,
@@ -30,6 +31,8 @@ export default function FaceTrackingVRMViewer({
   const [isWebcamReady, setIsWebcamReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const faceLandmarkerRef = useRef<unknown>(null);
+  const poseLandmarkerRef = useRef<unknown>(null);
+  const handLandmarkerRef = useRef<unknown>(null);
   const animationFrameRef = useRef<number | null>(null);
 
   // FaceStateCalculator 인스턴스 (스무딩 강도: 0.7, 눈 깜빡임 강도: 1.5)
@@ -39,6 +42,9 @@ export default function FaceTrackingVRMViewer({
       multipliers: { blink: 1.5 }, // 기본 눈 깜빡임 강도 1.5배
     })
   );
+
+  // BodyStateCalculator 인스턴스
+  const bodyCalculatorRef = useRef(new BodyStateCalculator());
 
   // 표정 강도 조절 상태
   const [expressionMultipliers, setExpressionMultipliers] = useState({
@@ -50,6 +56,8 @@ export default function FaceTrackingVRMViewer({
   });
 
   const [showSettings, setShowSettings] = useState(false);
+  const [enableBodyTracking, setEnableBodyTracking] = useState(false);
+  const [enableHandTracking, setEnableHandTracking] = useState(false);
 
   // 웹캠 스트림 초기화
   useEffect(() => {
@@ -140,6 +148,96 @@ export default function FaceTrackingVRMViewer({
       }
     };
   }, [isWebcamReady]);
+
+  // MediaPipe Pose Landmarker 초기화 (상체 추적)
+  useEffect(() => {
+    if (!isWebcamReady || !enableBodyTracking) return;
+
+    const initPoseLandmarker = async () => {
+      try {
+        const { PoseLandmarker, FilesetResolver } = await import(
+          '@mediapipe/tasks-vision'
+        );
+
+        const vision = await FilesetResolver.forVisionTasks(
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+        );
+
+        const landmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath:
+              'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+            delegate: 'CPU',
+          },
+          runningMode: 'VIDEO',
+          numPoses: 1,
+        });
+
+        poseLandmarkerRef.current = landmarker;
+        console.log('MediaPipe Pose Landmarker 초기화 완료');
+      } catch (err) {
+        console.error('Pose Landmarker 초기화 실패:', err);
+      }
+    };
+
+    initPoseLandmarker();
+
+    return () => {
+      if (
+        poseLandmarkerRef.current &&
+        typeof poseLandmarkerRef.current === 'object' &&
+        'close' in poseLandmarkerRef.current
+      ) {
+        (poseLandmarkerRef.current as { close: () => void }).close();
+        poseLandmarkerRef.current = null;
+      }
+    };
+  }, [isWebcamReady, enableBodyTracking]);
+
+  // MediaPipe Hand Landmarker 초기화 (손 추적)
+  useEffect(() => {
+    if (!isWebcamReady || !enableHandTracking) return;
+
+    const initHandLandmarker = async () => {
+      try {
+        const { HandLandmarker, FilesetResolver } = await import(
+          '@mediapipe/tasks-vision'
+        );
+
+        const vision = await FilesetResolver.forVisionTasks(
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+        );
+
+        const landmarker = await HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath:
+              'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+            delegate: 'CPU',
+          },
+          runningMode: 'VIDEO',
+          numHands: 2,
+        });
+
+        handLandmarkerRef.current = landmarker;
+        console.log('MediaPipe Hand Landmarker 초기화 완료');
+      } catch (err) {
+        console.error('Hand Landmarker 초기화 실패:', err);
+      }
+    };
+
+    initHandLandmarker();
+
+    return () => {
+      if (
+        handLandmarkerRef.current &&
+        typeof handLandmarkerRef.current === 'object' &&
+        'close' in handLandmarkerRef.current
+      ) {
+        (handLandmarkerRef.current as { close: () => void }).close();
+        handLandmarkerRef.current = null;
+      }
+    };
+  }, [isWebcamReady, enableHandTracking]);
 
   // Three.js 및 VRM 초기화
   useEffect(() => {
@@ -249,6 +347,75 @@ export default function FaceTrackingVRMViewer({
           }
         }
 
+        // 상체 추적 데이터 처리
+        if (
+          poseLandmarkerRef.current &&
+          videoRef.current &&
+          enableBodyTracking
+        ) {
+          try {
+            const poseResult = (
+              poseLandmarkerRef.current as {
+                detectForVideo: (
+                  video: HTMLVideoElement,
+                  timestamp: number
+                ) => {
+                  landmarks: Array<
+                    Array<{
+                      x: number;
+                      y: number;
+                      z: number;
+                      visibility?: number;
+                    }>
+                  >;
+                };
+              }
+            ).detectForVideo(videoRef.current, performance.now());
+
+            if (poseResult && poseResult.landmarks && poseResult.landmarks[0]) {
+              applyBodyTrackingToVRM(
+                vrmRef.current,
+                poseResult.landmarks[0],
+                bodyCalculatorRef.current
+              );
+            }
+          } catch {
+            // 추적 실패 시 무시
+          }
+        }
+
+        // 손 추적 데이터 처리
+        if (
+          handLandmarkerRef.current &&
+          videoRef.current &&
+          enableHandTracking
+        ) {
+          try {
+            const handResult = (
+              handLandmarkerRef.current as {
+                detectForVideo: (
+                  video: HTMLVideoElement,
+                  timestamp: number
+                ) => {
+                  landmarks: Array<Array<{ x: number; y: number; z: number }>>;
+                  handednesses: Array<Array<{ categoryName: string }>>;
+                };
+              }
+            ).detectForVideo(videoRef.current, performance.now());
+
+            if (handResult && handResult.landmarks) {
+              applyHandTrackingToVRM(
+                vrmRef.current,
+                handResult.landmarks,
+                handResult.handednesses,
+                bodyCalculatorRef.current
+              );
+            }
+          } catch {
+            // 추적 실패 시 무시
+          }
+        }
+
         // VRM 내부 상태 업데이트
         vrmRef.current.update(deltaTime);
       }
@@ -271,7 +438,16 @@ export default function FaceTrackingVRMViewer({
       }
       renderer.dispose();
     };
-  }, [modelPath, width, height, mirrorMode, rotateModel, invertPitch]);
+  }, [
+    modelPath,
+    width,
+    height,
+    mirrorMode,
+    rotateModel,
+    invertPitch,
+    enableBodyTracking,
+    enableHandTracking,
+  ]);
 
   // 모델이 로드된 후 변형 상태가 변경되면 적용
   useEffect(() => {
@@ -340,7 +516,41 @@ export default function FaceTrackingVRMViewer({
 
         {showSettings && (
           <div className="mt-2 bg-black/90 text-white p-4 rounded-lg text-sm w-64 space-y-3">
-            <h3 className="font-bold text-base mb-3">표정 강도 설정</h3>
+            <h3 className="font-bold text-base mb-3">추적 설정</h3>
+
+            {/* 상체 추적 토글 */}
+            <div className="flex items-center justify-between pb-2 border-b border-gray-600">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enableBodyTracking}
+                  onChange={(e) => setEnableBodyTracking(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <span>🙆 상체 추적</span>
+              </label>
+              <span className="text-xs text-gray-400">
+                {enableBodyTracking ? 'ON' : 'OFF'}
+              </span>
+            </div>
+
+            {/* 손 추적 토글 */}
+            <div className="flex items-center justify-between pb-3 border-b border-gray-600">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enableHandTracking}
+                  onChange={(e) => setEnableHandTracking(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <span>✋ 손 추적</span>
+              </label>
+              <span className="text-xs text-gray-400">
+                {enableHandTracking ? 'ON' : 'OFF'}
+              </span>
+            </div>
+
+            <h4 className="font-semibold text-sm mt-3 mb-2">표정 강도</h4>
 
             {/* 눈 깜빡임 강도 */}
             <div>
@@ -578,6 +788,147 @@ function applyFaceTrackingToVRM(
       head.rotation.x += (pitch - head.rotation.x) * smoothFactor;
       head.rotation.z += (roll - head.rotation.z) * smoothFactor;
     }
+  }
+}
+
+/**
+ * 상체 추적 데이터를 VRM 아바타에 적용하는 함수
+ * @param vrm - VRM 아바타 인스턴스
+ * @param landmarks - MediaPipe Pose 랜드마크 배열
+ * @param calculator - BodyStateCalculator 인스턴스
+ */
+function applyBodyTrackingToVRM(
+  vrm: VRM,
+  landmarks: Array<{ x: number; y: number; z: number; visibility?: number }>,
+  calculator: import('../utils/bodyStateCalculator').BodyStateCalculator
+) {
+  if (!landmarks || landmarks.length === 0) return;
+  if (!vrm.humanoid) return;
+
+  const bodyState = calculator.calculateBodyState(landmarks);
+  if (!bodyState) return;
+
+  // 상체 본 적용 (부드러운 전환)
+  const smoothFactor = 0.2;
+
+  // 척추
+  const spine = vrm.humanoid.getNormalizedBoneNode('spine');
+  if (spine) {
+    spine.rotation.x += (bodyState.spine.x - spine.rotation.x) * smoothFactor;
+    spine.rotation.z += (bodyState.spine.z - spine.rotation.z) * smoothFactor;
+  }
+
+  // 가슴
+  const chest = vrm.humanoid.getNormalizedBoneNode('chest');
+  if (chest) {
+    chest.rotation.x += (bodyState.chest.x - chest.rotation.x) * smoothFactor;
+    chest.rotation.z += (bodyState.chest.z - chest.rotation.z) * smoothFactor;
+  }
+
+  // 왼팔
+  const leftUpperArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
+  if (leftUpperArm) {
+    leftUpperArm.rotation.x +=
+      (bodyState.leftUpperArm.x - leftUpperArm.rotation.x) * smoothFactor;
+    leftUpperArm.rotation.y +=
+      (bodyState.leftUpperArm.y - leftUpperArm.rotation.y) * smoothFactor;
+  }
+
+  const leftLowerArm = vrm.humanoid.getNormalizedBoneNode('leftLowerArm');
+  if (leftLowerArm) {
+    leftLowerArm.rotation.z +=
+      (bodyState.leftLowerArm.z - leftLowerArm.rotation.z) * smoothFactor;
+  }
+
+  // 오른팔
+  const rightUpperArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
+  if (rightUpperArm) {
+    rightUpperArm.rotation.x +=
+      (bodyState.rightUpperArm.x - rightUpperArm.rotation.x) * smoothFactor;
+    rightUpperArm.rotation.y +=
+      (bodyState.rightUpperArm.y - rightUpperArm.rotation.y) * smoothFactor;
+  }
+
+  const rightLowerArm = vrm.humanoid.getNormalizedBoneNode('rightLowerArm');
+  if (rightLowerArm) {
+    rightLowerArm.rotation.z +=
+      (bodyState.rightLowerArm.z - rightLowerArm.rotation.z) * smoothFactor;
+  }
+}
+
+/**
+ * 손 추적 데이터를 VRM 아바타에 적용하는 함수
+ * @param vrm - VRM 아바타 인스턴스
+ * @param landmarks - MediaPipe Hand 랜드마크 배열
+ * @param handednesses - 왼손/오른손 정보
+ * @param calculator - BodyStateCalculator 인스턴스
+ */
+function applyHandTrackingToVRM(
+  vrm: VRM,
+  landmarks: Array<Array<{ x: number; y: number; z: number }>>,
+  handednesses: Array<Array<{ categoryName: string }>>,
+  calculator: import('../utils/bodyStateCalculator').BodyStateCalculator
+) {
+  if (!landmarks || landmarks.length === 0) return;
+  if (!vrm.humanoid) return;
+
+  // 왼손과 오른손 랜드마크 분리
+  let leftHandLandmarks = null;
+  let rightHandLandmarks = null;
+
+  for (let i = 0; i < landmarks.length; i++) {
+    const handedness = handednesses[i]?.[0]?.categoryName;
+    if (handedness === 'Left') {
+      leftHandLandmarks = landmarks[i];
+    } else if (handedness === 'Right') {
+      rightHandLandmarks = landmarks[i];
+    }
+  }
+
+  const handState = calculator.calculateHandState(
+    leftHandLandmarks,
+    rightHandLandmarks
+  );
+
+  // 손가락 본 적용 (VRM 0.x는 손가락 본이 제한적일 수 있음)
+  const smoothFactor = 0.3;
+
+  // 왼손 손가락
+  const leftThumb = vrm.humanoid.getNormalizedBoneNode('leftThumbProximal');
+  if (leftThumb) {
+    leftThumb.rotation.z +=
+      (handState.leftThumb * 0.5 - leftThumb.rotation.z) * smoothFactor;
+  }
+
+  const leftIndex = vrm.humanoid.getNormalizedBoneNode('leftIndexProximal');
+  if (leftIndex) {
+    leftIndex.rotation.z +=
+      (handState.leftIndex * 0.5 - leftIndex.rotation.z) * smoothFactor;
+  }
+
+  const leftMiddle = vrm.humanoid.getNormalizedBoneNode('leftMiddleProximal');
+  if (leftMiddle) {
+    leftMiddle.rotation.z +=
+      (handState.leftMiddle * 0.5 - leftMiddle.rotation.z) * smoothFactor;
+  }
+
+  // 오른손 손가락
+  const rightThumb = vrm.humanoid.getNormalizedBoneNode('rightThumbProximal');
+  if (rightThumb) {
+    rightThumb.rotation.z +=
+      (handState.rightThumb * -0.5 - rightThumb.rotation.z) * smoothFactor;
+  }
+
+  const rightIndex = vrm.humanoid.getNormalizedBoneNode('rightIndexProximal');
+  if (rightIndex) {
+    rightIndex.rotation.z +=
+      (handState.rightIndex * -0.5 - rightIndex.rotation.z) * smoothFactor;
+  }
+
+  const rightMiddle = vrm.humanoid.getNormalizedBoneNode('rightMiddleProximal');
+  if (rightMiddle) {
+    rightMiddle.rotation.z +=
+      (handState.rightMiddle * -0.5 - rightMiddle.rotation.z) * smoothFactor;
   }
 }
 
