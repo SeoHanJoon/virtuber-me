@@ -90,10 +90,6 @@ export default function LandmarkVisualizer({
       width={width}
       height={height}
       className="absolute top-0 left-0 pointer-events-none"
-      style={{
-        width: `${width}px`,
-        height: `${height}px`,
-      }}
     />
   );
 }

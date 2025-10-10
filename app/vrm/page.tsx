@@ -1,49 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import VRMViewer from '@/components/VRMViewer';
-import type { VRMModel } from '@/types/vrm';
+import { useVRMModels } from '@/hooks/useVRMModels';
 
 export default function VRMPage() {
-  const [models, setModels] = useState<VRMModel[]>([]);
-  const [selectedModel, setSelectedModel] = useState<string>('');
-  const [isLoading, setIsLoading] = useState(true);
+  const { models, selectedModel, setSelectedModel, isLoading } = useVRMModels();
 
   // 모델 변형 옵션 상태
   const [mirrorMode, setMirrorMode] = useState(false);
   const [rotateModel, setRotateModel] = useState(false);
-
-  // VRM 모델 목록 로드
-  useEffect(() => {
-    const loadModels = async () => {
-      try {
-        const response = await fetch('/api/vrm-models');
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        if (Array.isArray(data)) {
-          setModels(data);
-          if (data.length > 0) {
-            setSelectedModel(data[0].path);
-          }
-        } else {
-          console.error('API 응답이 배열이 아닙니다:', data);
-          setModels([]);
-        }
-      } catch (error) {
-        console.error('모델 목록 로드 실패:', error);
-        setModels([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadModels();
-  }, []);
 
   return (
     <div className="min-h-screen p-8 pb-20 sm:p-20 font-sans">

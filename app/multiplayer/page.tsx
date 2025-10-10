@@ -8,10 +8,10 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import type { VRMModel } from '@/types/vrm';
+import { useVRMModels } from '@/hooks/useVRMModels';
 
 // MultiplayerVRMWorld 컴포넌트를 동적으로 로드 (SSR 방지)
 const MultiplayerVRMWorld = dynamic(
@@ -23,50 +23,10 @@ const MultiplayerVRMWorld = dynamic(
  * 멀티플레이어 페이지
  */
 export default function MultiplayerPage() {
-  const [models, setModels] = useState<VRMModel[]>([]);
-  const [selectedModel, setSelectedModel] = useState<string>('');
+  const { models, selectedModel, setSelectedModel, isLoading } = useVRMModels();
   const [nickname, setNickname] = useState<string>('');
   const [serverUrl, setServerUrl] = useState<string>('http://localhost:3001');
   const [isStarted, setIsStarted] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-
-  /**
-   * VRM 모델 목록 로드
-   */
-  useEffect(() => {
-    async function loadModels() {
-      try {
-        const res = await fetch('/api/vrm-models');
-
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`);
-        }
-
-        const data = await res.json();
-
-        // 데이터가 배열인지 확인
-        if (Array.isArray(data)) {
-          setModels(data);
-
-          // 첫 번째 모델 자동 선택
-          if (data.length > 0) {
-            setSelectedModel(data[0].path);
-          }
-        } else {
-          console.error('API 응답이 배열이 아닙니다:', data);
-          setModels([]);
-        }
-
-        setIsLoading(false);
-      } catch (error) {
-        console.error('모델 목록 로드 실패:', error);
-        setModels([]); // 에러 발생 시 빈 배열로 설정
-        setIsLoading(false);
-      }
-    }
-
-    loadModels();
-  }, []);
 
   /**
    * 월드 시작

@@ -18,7 +18,7 @@ import TrackingStatusIndicator from './TrackingStatusIndicator';
 import ExpressionSettingsPanel, {
   type ExpressionMultipliers,
 } from './ExpressionSettingsPanel';
-import LandmarkVisualizer from './LandmarkVisualizer';
+import WebcamPreview from './WebcamPreview';
 
 export default function FaceTrackingVRMViewer({
   modelPath,
@@ -357,56 +357,14 @@ export default function FaceTrackingVRMViewer({
         onReset={handleReset}
       />
 
-      {/* 랜드마크 시각화 (웹캠 비디오 프리뷰) - 좌측 하단으로 이동 */}
+      {/* 랜드마크 시각화 (웹캠 비디오 프리뷰) */}
       {showLandmarks && videoRef.current && (
-        <div className="fixed bottom-4 left-4 z-50">
-          <div className="relative">
-            {/* 웹캠 프리뷰 (더 작은 크기) */}
-            <div
-              className="relative"
-              style={{
-                width: '240px',
-                height: '180px',
-                borderRadius: '8px',
-                border: '2px solid rgba(255,255,255,0.3)',
-                overflow: 'hidden',
-                backgroundColor: '#000',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-              }}
-            >
-              <video
-                ref={(el) => {
-                  if (el && videoRef.current) {
-                    el.srcObject = videoRef.current.srcObject;
-                    el.play().catch(() => {
-                      // 자동 재생 실패 무시
-                    });
-                  }
-                }}
-                playsInline
-                muted
-                autoPlay
-                width={240}
-                height={180}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
-                }}
-              />
-              {/* 랜드마크 오버레이 */}
-              <div className="absolute top-0 left-0">
-                <LandmarkVisualizer
-                  videoRef={videoRef}
-                  landmarks={currentLandmarks}
-                  width={240}
-                  height={180}
-                  enabled={showLandmarks}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
+        <WebcamPreview
+          videoRef={videoRef}
+          landmarks={currentLandmarks}
+          width={240}
+          height={180}
+        />
       )}
     </div>
   );
