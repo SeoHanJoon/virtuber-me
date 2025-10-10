@@ -454,46 +454,115 @@ export class FaceStateCalculator {
 }
 
 /**
- * FaceState를 VRM 블렌드셰이프 값으로 변환하는 헬퍼 함수
+ * FaceState를 VRM 블렌드셰이프 값으로 변환하는 헬퍼 함수 (블렌딩 방식)
  *
  * @param faceState - 계산된 얼굴 상태
- * @returns VRM 표정 매핑
+ * @returns VRM 표정 매핑 (여러 표정을 동시에 블렌딩)
  */
 export function mapFaceStateToVRM(faceState: FaceState) {
   const { mouthOpen, mouthWidth, mouthSmile } = faceState;
 
-  // 입 모양 표정 결정 (aa, ih, ou, ee, oh)
-  let mouthExpression = 'neutral';
-  let mouthValue = 0;
+  // 입 모양 표정 블렌딩 (2차원 매핑: mouthOpen x mouthWidth)
+  const mouthBlends: Record<string, number> = {
+    neutral: 0,
+    aa: 0,
+    ih: 0,
+    ou: 0,
+    ee: 0,
+    oh: 0,
+  };
 
-  if (mouthOpen < 0.1) {
-    mouthExpression = 'neutral';
-    mouthValue = 1;
-  } else if (mouthOpen < 0.25) {
-    mouthExpression = 'ih';
-    mouthValue = (mouthOpen - 0.1) / 0.15;
-  } else if (mouthOpen < 0.45) {
-    if (mouthWidth > 0.6) {
-      mouthExpression = 'ee';
-      mouthValue = (mouthOpen - 0.25) / 0.2;
-    } else {
-      mouthExpression = 'ou';
-      mouthValue = (mouthOpen - 0.25) / 0.2;
+  // 입 닫힘 감쇠 계수 (입을 빠르게 닫을 때 다른 표정들을 급격히 줄임)
+  const closeDecay = mouthOpen < 0.2 ? mouthOpen / 0.2 : 1.0;
+
+  // 입이 거의 닫혀있음 (mouthOpen < 0.15)
+  if (mouthOpen < 0.15) {
+    mouthBlends.neutral = 1.0;
+
+    // 살짝 벌리기 시작 (ih로 전환)
+    if (mouthOpen > 0.05) {
+      const openWeight = (mouthOpen - 0.05) / 0.1;
+      mouthBlends.ih = openWeight * 0.4;
+      mouthBlends.neutral = 1.0 - openWeight * 0.4;
     }
-  } else if (mouthOpen < 0.7) {
-    mouthExpression = 'oh';
-    mouthValue = (mouthOpen - 0.45) / 0.25;
-  } else {
-    mouthExpression = 'aa';
-    mouthValue = Math.min(1, (mouthOpen - 0.7) / 0.3);
+  }
+  // 약간 벌림 (0.15 ~ 0.35) - ih / ee 영역
+  else if (mouthOpen < 0.35) {
+    const openRange = (mouthOpen - 0.15) / 0.2;
+
+    if (mouthWidth > 0.6) {
+      // 입이 넓음 → ih + ee 블렌딩
+      const wideWeight = (mouthWidth - 0.6) / 0.4;
+      mouthBlends.ih = (1.0 - openRange * wideWeight) * closeDecay;
+      mouthBlends.ee = openRange * wideWeight * closeDecay;
+    } else {
+      // 입이 보통/좁음 → ih 위주
+      mouthBlends.ih = 0.8 * closeDecay;
+      mouthBlends.ou = 0.2 * (1.0 - mouthWidth) * closeDecay;
+    }
+  }
+  // 중간 벌림 (0.35 ~ 0.6) - ee / ou / oh 영역
+  else if (mouthOpen < 0.6) {
+    const openRange = (mouthOpen - 0.35) / 0.25;
+
+    if (mouthWidth > 0.6) {
+      // 입이 넓음 → ee + oh 블렌딩
+      mouthBlends.ee = (1.0 - openRange) * closeDecay;
+      mouthBlends.oh = openRange * 0.7 * closeDecay;
+    } else if (mouthWidth < 0.4) {
+      // 입이 좁음 → ou + oh 블렌딩
+      mouthBlends.ou = (1.0 - openRange) * closeDecay;
+      mouthBlends.oh = openRange * 0.6 * closeDecay;
+    } else {
+      // 입이 보통 → oh 위주
+      mouthBlends.oh = 0.8 * closeDecay;
+      const wideWeight = (mouthWidth - 0.4) / 0.2;
+      mouthBlends.ee = 0.2 * wideWeight * closeDecay;
+      mouthBlends.ou = 0.2 * (1.0 - wideWeight) * closeDecay;
+    }
+  }
+  // 많이 벌림 (0.6 ~ 0.85) - oh / aa 영역
+  else if (mouthOpen < 0.85) {
+    const openRange = (mouthOpen - 0.6) / 0.25;
+
+    if (mouthWidth > 0.5) {
+      // 입이 넓거나 보통 → oh + aa 블렌딩
+      mouthBlends.oh = (1.0 - openRange) * closeDecay;
+      mouthBlends.aa = openRange * closeDecay;
+    } else {
+      // 입이 좁음 → ou + aa 블렌딩 (좁고 크게 벌림)
+      mouthBlends.ou = (1.0 - openRange) * 0.4 * closeDecay;
+      mouthBlends.oh = (1.0 - openRange) * 0.6 * closeDecay;
+      mouthBlends.aa = openRange * closeDecay;
+    }
+  }
+  // 크게 벌림 (0.85+) - aa 위주
+  else {
+    mouthBlends.aa =
+      Math.min(1.0, 0.7 + ((mouthOpen - 0.85) / 0.15) * 0.3) * closeDecay;
+
+    // 입이 좁으면 ou도 약간 섞음
+    if (mouthWidth < 0.5) {
+      const narrowWeight = (0.5 - mouthWidth) / 0.5;
+      mouthBlends.ou = narrowWeight * 0.3 * closeDecay;
+      mouthBlends.aa *= 1.0 - narrowWeight * 0.2;
+    }
   }
 
+  // 입이 거의 닫힌 상태면 neutral을 강제로 높임
+  if (mouthOpen < 0.2) {
+    const neutralBoost = (0.2 - mouthOpen) / 0.2;
+    mouthBlends.neutral = Math.max(mouthBlends.neutral, neutralBoost);
+  }
+
+  // 모든 블렌드 값을 0~1 범위로 정규화
+  Object.keys(mouthBlends).forEach((key) => {
+    mouthBlends[key] = Math.max(0, Math.min(1, mouthBlends[key]));
+  });
+
   return {
-    // 입 표정
-    mouth: {
-      expression: mouthExpression,
-      value: mouthValue,
-    },
+    // 입 표정 (블렌딩된 여러 표정)
+    mouth: mouthBlends,
 
     // 눈 깜빡임
     blink: {

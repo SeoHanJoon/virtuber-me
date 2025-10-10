@@ -480,24 +480,26 @@ function applyFaceTrackingToVRM(
 
   // 3. VRM에 적용
 
-  // 3-1. 입 표정 (모든 입 관련 표정 초기화 후 적용)
-  const mouthExpressions = ['neutral', 'aa', 'ih', 'ou', 'ee', 'oh'];
-  mouthExpressions.forEach((exp) => {
+  // 3-1. 입 표정 (블렌딩 방식으로 여러 표정 동시 적용)
+  Object.entries(vrmMapping.mouth).forEach(([expression, value]) => {
     try {
-      vrm.expressionManager?.setValue(exp as VRMExpressionPresetName, 0);
+      if (value > 0.01) {
+        // 0.01 이상인 값만 적용 (미세한 값 무시)
+        vrm.expressionManager?.setValue(
+          expression as VRMExpressionPresetName,
+          value as number
+        );
+      } else {
+        // 0에 가까우면 명시적으로 0 설정
+        vrm.expressionManager?.setValue(
+          expression as VRMExpressionPresetName,
+          0
+        );
+      }
     } catch {
       // 표정이 없는 경우 무시
     }
   });
-
-  try {
-    vrm.expressionManager.setValue(
-      vrmMapping.mouth.expression as VRMExpressionPresetName,
-      vrmMapping.mouth.value
-    );
-  } catch {
-    // 표정이 없는 경우 무시
-  }
 
   // 3-2. 눈 깜빡임
   try {
