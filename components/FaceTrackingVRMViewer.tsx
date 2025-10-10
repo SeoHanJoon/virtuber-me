@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import type { FaceTrackingVRMViewerProps } from '../types/components';
 import { FaceStateCalculator } from '../utils/faceStateCalculator';
 import { BodyStateCalculator } from '../utils/bodyStateCalculator';
+import type { BlendShapesData } from '../utils/mediapipeBlendShapes';
 import { useWebcam } from '../hooks/useWebcam';
 import { useMediaPipeLandmarkers } from '../hooks/useMediaPipeLandmarkers';
 import { useVRMScene } from '../hooks/useVRMScene';
@@ -17,6 +18,8 @@ import TrackingStatusIndicator from './TrackingStatusIndicator';
 import ExpressionSettingsPanel, {
   type ExpressionMultipliers,
 } from './ExpressionSettingsPanel';
+import BlendShapesMonitor from './BlendShapesMonitor';
+import LandmarkVisualizer from './LandmarkVisualizer';
 
 export default function FaceTrackingVRMViewer({
   modelPath,
@@ -34,6 +37,14 @@ export default function FaceTrackingVRMViewer({
   const [error, setError] = useState<string | null>(null);
   const [enableBodyTracking, setEnableBodyTracking] = useState(false);
   const [enableHandTracking, setEnableHandTracking] = useState(false);
+  const [showLandmarks, setShowLandmarks] = useState(false);
+  const [blendShapesData, setBlendShapesData] =
+    useState<BlendShapesData | null>(null);
+  const [currentLandmarks, setCurrentLandmarks] = useState<Array<{
+    x: number;
+    y: number;
+    z: number;
+  }> | null>(null);
   const [expressionMultipliers, setExpressionMultipliers] =
     useState<ExpressionMultipliers>({
       mouthOpen: 1.0,
@@ -115,17 +126,27 @@ export default function FaceTrackingVRMViewer({
                   faceLandmarks: Array<
                     Array<{ x: number; y: number; z: number }>
                   >;
+                  faceBlendshapes?: Array<BlendShapesData>;
                 };
               }
             ).detectForVideo(videoRef.current, performance.now());
 
             if (result?.faceLandmarks?.[0]) {
+              // VRM에 얼굴 추적 적용
               applyFaceTrackingToVRM(
                 vrmRef.current,
                 result.faceLandmarks[0],
                 faceCalculatorRef.current,
                 invertPitch
               );
+
+              // 시각화를 위해 랜드마크 저장
+              setCurrentLandmarks(result.faceLandmarks[0]);
+
+              // BlendShapes 데이터 저장 (모니터링용)
+              if (result.faceBlendshapes?.[0]) {
+                setBlendShapesData(result.faceBlendshapes[0]);
+              }
             }
           } catch {
             // 추적 실패 무시
@@ -295,8 +316,40 @@ export default function FaceTrackingVRMViewer({
         onBodyTrackingChange={setEnableBodyTracking}
         enableHandTracking={enableHandTracking}
         onHandTrackingChange={setEnableHandTracking}
+        showLandmarks={showLandmarks}
+        onShowLandmarksChange={setShowLandmarks}
         onReset={handleReset}
       />
+
+      {/* BlendShapes 모니터 */}
+      <BlendShapesMonitor blendShapes={blendShapesData} threshold={0.1} />
+
+      {/* 랜드마크 시각화 (웹캠 비디오 위에 오버레이) */}
+      <div className="fixed top-4 left-1/2 -translate-x-1/2">
+        <div className="relative">
+          <video
+            ref={videoRef}
+            className={showLandmarks ? 'block' : 'hidden'}
+            playsInline
+            muted
+            width={320}
+            height={240}
+            style={{
+              borderRadius: '8px',
+              border: '2px solid rgba(255,255,255,0.3)',
+            }}
+          />
+          {showLandmarks && (
+            <LandmarkVisualizer
+              videoRef={videoRef}
+              landmarks={currentLandmarks}
+              width={320}
+              height={240}
+              enabled={showLandmarks}
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }

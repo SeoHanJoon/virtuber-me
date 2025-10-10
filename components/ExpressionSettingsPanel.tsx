@@ -15,6 +15,8 @@ interface ExpressionSettingsPanelProps {
   onBodyTrackingChange: (enabled: boolean) => void;
   enableHandTracking: boolean;
   onHandTrackingChange: (enabled: boolean) => void;
+  showLandmarks: boolean;
+  onShowLandmarksChange: (show: boolean) => void;
   onReset: () => void;
 }
 
@@ -28,6 +30,8 @@ export default function ExpressionSettingsPanel({
   onBodyTrackingChange,
   enableHandTracking,
   onHandTrackingChange,
+  showLandmarks,
+  onShowLandmarksChange,
   onReset,
 }: ExpressionSettingsPanelProps) {
   const [showSettings, setShowSettings] = useState(false);
@@ -62,7 +66,7 @@ export default function ExpressionSettingsPanel({
           </div>
 
           {/* 손 추적 토글 */}
-          <div className="flex items-center justify-between pb-3 border-b border-gray-600">
+          <div className="flex items-center justify-between pb-2 border-b border-gray-600">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -74,6 +78,22 @@ export default function ExpressionSettingsPanel({
             </label>
             <span className="text-xs text-gray-400">
               {enableHandTracking ? 'ON' : 'OFF'}
+            </span>
+          </div>
+
+          {/* 랜드마크 시각화 토글 */}
+          <div className="flex items-center justify-between pb-3 border-b border-gray-600">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showLandmarks}
+                onChange={(e) => onShowLandmarksChange(e.target.checked)}
+                className="w-4 h-4"
+              />
+              <span>👁️ 랜드마크 표시</span>
+            </label>
+            <span className="text-xs text-gray-400">
+              {showLandmarks ? 'ON' : 'OFF'}
             </span>
           </div>
 

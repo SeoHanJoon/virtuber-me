@@ -9,6 +9,8 @@
 - **상체 및 손 추적**: MediaPipe Pose/Hand로 상체 움직임 및 손가락 제스처 추적 🙆✋
 - **멀티플레이어 월드**: 최대 100명이 동시 접속 가능한 VRM 아바타 월드 🎉
 - **고급 얼굴 분석**: 입 모양, 눈 깜빡임, 시선, 미소 감지 (468+ 랜드마크)
+- **ARKit BlendShapes 지원**: MediaPipe의 52개 BlendShapes로 미세한 표정 제어 🆕
+- **실시간 시각화**: 얼굴 랜드마크 오버레이 및 BlendShapes 모니터 🆕
 
 ## 📦 기술 스택
 
@@ -34,7 +36,9 @@ virtuber-me/
 │ ├── FaceTrackingVRMViewer.tsx # 얼굴 추적 메인 컴포넌트 (리팩토링됨 🆕)
 │ ├── MultiplayerVRMWorld.tsx # 멀티플레이어 컴포넌트 ✨
 │ ├── TrackingStatusIndicator.tsx # 추적 상태 표시 UI 🆕
-│ └── ExpressionSettingsPanel.tsx # 표정 강도 조절 UI 🆕
+│ ├── ExpressionSettingsPanel.tsx # 표정 강도 조절 UI 🆕
+│ ├── BlendShapesMonitor.tsx # BlendShapes 실시간 모니터 🆕
+│ └── LandmarkVisualizer.tsx # 랜드마크 시각화 🆕
 ├── hooks/
 │ ├── useWebcam.ts # 웹캠 관리 훅 🆕
 │ ├── useMediaPipeLandmarkers.ts # MediaPipe 초기화 훅 🆕
@@ -46,6 +50,7 @@ virtuber-me/
 ├── utils/
 │ ├── faceStateCalculator.ts # 정밀 얼굴 상태 계산기 🎯
 │ ├── bodyStateCalculator.ts # 상체 및 손 추적 계산기 🙆✋
+│ ├── mediapipeBlendShapes.ts # MediaPipe BlendShapes 매핑 🆕
 │ ├── vrmTracking.ts # VRM 추적 적용 함수 🆕
 │ ├── vrmTransforms.ts # VRM 변형 유틸 🆕
 │ └── README.md # 상세 사용법 문서
@@ -70,7 +75,7 @@ virtuber-me/
 - **테스트 용이성**: 작은 단위로 분리되어 개별 테스트 가능
 - **가독성**: 각 파일이 200줄 이하로 유지
 
-**FaceTrackingVRMViewer 구조** (952줄 → 302줄로 축소):
+**FaceTrackingVRMViewer 구조** (952줄 → 355줄로 축소):
 \`\`\`
 FaceTrackingVRMViewer.tsx (메인)
 ├─ useWebcam() ← 웹캠 관리
@@ -78,7 +83,9 @@ FaceTrackingVRMViewer.tsx (메인)
 ├─ useVRMScene() ← Three.js Scene 관리
 ├─ vrmTracking 함수들 ← 추적 데이터 적용
 ├─ TrackingStatusIndicator ← 상태 UI
-└─ ExpressionSettingsPanel ← 설정 UI
+├─ ExpressionSettingsPanel ← 설정 UI
+├─ BlendShapesMonitor ← BlendShapes 모니터 🆕
+└─ LandmarkVisualizer ← 랜드마크 시각화 🆕
 \`\`\`
 
 ## 🛠️ 설치 및 실행
