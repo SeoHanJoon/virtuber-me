@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRM, VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { applyTransforms } from '../utils/vrmTransforms';
+import { applyIdlePose } from '../utils/vrmPose';
+import { globalCalibrationManager } from '../utils/vrmCalibration';
 
 /**
  * VRM Scene 초기화 옵션
@@ -86,6 +88,26 @@ export function useVRMScene({
 
         // 모델 변형 적용
         applyTransforms(vrm.scene, mirrorMode, rotateModel);
+
+        // VRM Calibration: 모델 구조 분석 및 보정 매트릭스 생성
+        try {
+          const calibrationProfile = globalCalibrationManager.calibrate(
+            vrm,
+            modelPath
+          );
+          console.log(
+            `📊 [VRM] Calibration 완료: ${calibrationProfile.basePoseType}`
+          );
+          // 디버그 정보 출력 (개발 중)
+          globalCalibrationManager.debugProfile(modelPath);
+        } catch (error) {
+          console.error('[VRM] Calibration 실패:', error);
+        }
+
+        // 기본 자세 적용 (T-pose → Idle Pose)
+        // 팔을 자연스럽게 내린 상태로 초기화
+        // modelPath를 전달하여 calibration 정보 활용
+        applyIdlePose(vrm, modelPath);
 
         setIsLoaded(true);
         onVRMLoaded?.();

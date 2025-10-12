@@ -3,7 +3,15 @@
  *
  * MediaPipe Pose/Hand Landmarker를 사용하여
  * VRM humanoid bone에 적용 가능한 상체 및 손 상태를 계산합니다.
+ *
+ * v2: Calibration 시스템 통합
+ * - 모델별 본 구조 차이를 자동 보정
+ * - 회전 보정 매트릭스 적용
  */
+
+import { IDLE_POSE_ROTATION } from './vrmPose';
+import { globalCalibrationManager } from './vrmCalibration';
+import * as THREE from 'three';
 
 /**
  * 상체 상태 (어깨, 팔, 몸통)
@@ -55,8 +63,15 @@ type HandLandmark = { x: number; y: number; z: number };
 
 /**
  * 상체 상태 계산기
+ *
+ * v2: Calibration 지원 추가
  */
 export class BodyStateCalculator {
+  // 연결된 VRM 모델 ID (calibration용)
+  private modelId: string | null = null;
+  // Calibration 적용 여부
+  private useCalibration: boolean = true;
+
   // MediaPipe Pose 랜드마크 인덱스
   private readonly POSE_LANDMARKS = {
     NOSE: 0,
@@ -84,6 +99,20 @@ export class BodyStateCalculator {
     RING_MCP: 13,
     LITTLE_MCP: 17,
   };
+
+  /**
+   * 모델 ID 설정 (calibration 적용을 위해)
+   */
+  public setModelId(modelId: string): void {
+    this.modelId = modelId;
+  }
+
+  /**
+   * Calibration 적용 여부 설정
+   */
+  public setUseCalibration(use: boolean): void {
+    this.useCalibration = use;
+  }
 
   /**
    * Pose 랜드마크로부터 상체 상태 계산
@@ -219,7 +248,16 @@ export class BodyStateCalculator {
   }
 
   /**
-   * 팔 회전 계산
+   * 팔 회전 계산 (MediaPipe Pose → VRM Humanoid)
+   *
+   * MediaPipe 좌표계: Y-down (위=0, 아래=1), 정규화된 화면 좌표
+   * VRM 좌표계: Y-up (위=+Y, 아래=-Y), 기본 자세는 팔을 자연스럽게 내린 상태
+   *
+   * 변환 전략:
+   * 1. MediaPipe Y를 반전 (Y-down → Y-up)
+   * 2. 기본 자세(팔 내림)에서의 벡터를 기준으로 회전 계산
+   * 3. VRM의 상완/하완 회전에 매핑
+   * 4. Visibility 체크: 화면에 안 보이는 부위는 기본 자세 유지
    */
   private calculateArmRotation(
     shoulder: PoseLandmark,
@@ -231,18 +269,60 @@ export class BodyStateCalculator {
     upperArm: { x: number; y: number; z: number };
     lowerArm: { x: number; y: number; z: number };
   } {
+    // Visibility 임계값
+    // 맥북 카메라처럼 상체만 보이는 경우, 팔/손이 화면 밖이면 visibility가 낮음
+    const VISIBILITY_THRESHOLD = 0.5;
+
+    // 필수 랜드마크의 visibility 체크
+    // 어깨는 보통 보이므로 팔꿈치와 손목만 체크
+    const elbowVisible = (elbow.visibility ?? 1) >= VISIBILITY_THRESHOLD;
+    const wristVisible = (wrist.visibility ?? 1) >= VISIBILITY_THRESHOLD;
+
+    // 팔꿈치 또는 손목이 안 보이면 기본 자세(Idle Pose) 유지
+    // (맥북 카메라에서 팔을 내리면 화면 밖으로 나가는 경우)
+    if (!elbowVisible || !wristVisible) {
+      // 좌우에 따라 idle pose 회전값 반환
+      const idleUpperArm =
+        side === 'left'
+          ? IDLE_POSE_ROTATION.leftUpperArm
+          : IDLE_POSE_ROTATION.rightUpperArm;
+      const idleLowerArm =
+        side === 'left'
+          ? IDLE_POSE_ROTATION.leftLowerArm
+          : IDLE_POSE_ROTATION.rightLowerArm;
+
+      return {
+        shoulder: { x: 0, y: 0, z: 0 },
+        upperArm: idleUpperArm, // 기본 자세 (팔 내림)
+        lowerArm: idleLowerArm, // 기본 자세 (팔꿈치 약간 굽힘)
+      };
+    }
+
+    // MediaPipe 좌표를 VRM 좌표로 변환
+    // MediaPipe: Y-down (0=위, 1=아래), X는 화면 기준 (0=왼쪽, 1=오른쪽)
+    // VRM: Y-up, Z는 카메라 방향 (앞=-Z, 뒤=+Z)
+    const toVRMCoord = (p: PoseLandmark) => ({
+      x: p.x - 0.5, // 중심을 0으로
+      y: -(p.y - 0.5), // Y 반전 (MediaPipe Y-down → VRM Y-up)
+      z: -p.z, // Z 방향 조정
+    });
+
+    const shoulderVRM = toVRMCoord(shoulder);
+    const elbowVRM = toVRMCoord(elbow);
+    const wristVRM = toVRMCoord(wrist);
+
     // 상완 벡터 (어깨 → 팔꿈치)
     const upperArmVector = {
-      x: elbow.x - shoulder.x,
-      y: elbow.y - shoulder.y,
-      z: elbow.z - shoulder.z,
+      x: elbowVRM.x - shoulderVRM.x,
+      y: elbowVRM.y - shoulderVRM.y,
+      z: elbowVRM.z - shoulderVRM.z,
     };
 
     // 전완 벡터 (팔꿈치 → 손목)
     const lowerArmVector = {
-      x: wrist.x - elbow.x,
-      y: wrist.y - elbow.y,
-      z: wrist.z - elbow.z,
+      x: wristVRM.x - elbowVRM.x,
+      y: wristVRM.y - elbowVRM.y,
+      z: wristVRM.z - elbowVRM.z,
     };
 
     // 벡터 정규화
@@ -263,31 +343,41 @@ export class BodyStateCalculator {
       z: upperArmVector.z / upperLength,
     };
 
-    // 좌우 반전
+    // 좌우 대칭 처리
     const sideMultiplier = side === 'left' ? 1 : -1;
 
-    // 상완 회전
-    // X축 회전 (Pitch): 팔을 앞뒤로 (y-z 평면)
-    const upperArmPitch = Math.atan2(nUpperArm.y, -nUpperArm.z);
+    // VRM 기본 자세: 팔을 자연스럽게 내린 상태
+    // 기본 벡터: 왼팔 (+X, -Y, 0), 오른팔 (-X, -Y, 0)
+    // 즉, 아래쪽으로 향하는 것이 기본 자세
 
-    // Y축 회전 (Yaw): 팔을 좌우로 (x-z 평면)
-    const upperArmYaw = Math.atan2(nUpperArm.x * sideMultiplier, -nUpperArm.z);
+    // X축 회전 (Pitch): 팔을 앞/뒤로
+    // 팔을 앞으로 들기 = 양수, 뒤로 젖히기 = 음수
+    // nUpperArm.z가 음수(앞) → 양수 회전
+    const armPitchForward = Math.asin(this.clamp(-nUpperArm.z, -1, 1));
 
-    // Z축 회전 (Roll): 팔의 비틀림 (x-y 평면)
-    const upperArmRoll = Math.atan2(nUpperArm.x * sideMultiplier, nUpperArm.y);
+    // Z축 회전 (팔을 옆으로 들기)
+    // 왼팔: nUpperArm.x가 양수(왼쪽) → 팔을 옆으로 들기 = 음수 회전
+    // 오른팔: nUpperArm.x가 음수(오른쪽) → 팔을 옆으로 들기 = 양수 회전
+    // 기본 자세(팔 내림)에서 Y가 -1에 가까움
+    let armLift = Math.asin(this.clamp(-nUpperArm.y, -1, 1));
+    // 팔이 내려갈수록 armLift는 양수 → 이를 음수로 반전 (기본 자세=0)
+    armLift = armLift - Math.PI / 2; // 기본 자세를 0으로 조정
+
+    // Y축 회전 (팔의 내/외전)
+    // 기본적으로 작은 값
+    const armYaw = Math.atan2(nUpperArm.x * sideMultiplier, -nUpperArm.y) * 0.3;
 
     // 팔꿈치 굽힘 각도 계산
     const elbowAngle = this.calculateAngle(upperArmVector, lowerArmVector);
-
-    // 팔꿈치는 한 방향으로만 굽힘 (0 ~ 150도 정도)
-    const elbowBend = this.clamp((Math.PI - elbowAngle) * 0.7, 0, 2.3);
+    // 팔꿈치는 한 방향으로만 굽힘 (180도=펴짐, 0도=완전 굽힘)
+    const elbowBend = this.clamp(Math.PI - elbowAngle, 0, Math.PI * 0.8);
 
     return {
       shoulder: { x: 0, y: 0, z: 0 },
       upperArm: {
-        x: this.clamp(upperArmPitch, -Math.PI, Math.PI / 2), // 팔을 앞으로 들기 제한
-        y: this.clamp(upperArmYaw, -Math.PI / 2, Math.PI / 2), // 팔을 옆으로 들기 제한
-        z: this.clamp(upperArmRoll * 0.3, -0.5, 0.5), // 비틀림 제한
+        x: this.clamp(armPitchForward * 0.8, -Math.PI / 2, Math.PI / 2), // 앞뒤
+        y: this.clamp(armYaw, -Math.PI / 4, Math.PI / 4), // 내외전 제한
+        z: this.clamp(armLift * sideMultiplier, -Math.PI, Math.PI / 4), // 옆으로 들기
       },
       lowerArm: {
         x: 0,

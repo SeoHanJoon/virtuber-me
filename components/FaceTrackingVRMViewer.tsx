@@ -14,6 +14,7 @@ import {
   applyBodyTrackingToVRM,
   applyHandTrackingToVRM,
 } from '../utils/vrmTracking';
+import { resetToIdlePose } from '../utils/vrmPose';
 import TrackingStatusIndicator from './TrackingStatusIndicator';
 import ExpressionSettingsPanel, {
   type ExpressionMultipliers,
@@ -47,6 +48,11 @@ export default function FaceTrackingVRMViewer({
     y: number;
     z: number;
   }> | null>(null);
+  const [currentPoseLandmarks, setCurrentPoseLandmarks] = useState<Array<{
+    x: number;
+    y: number;
+    z: number;
+  }> | null>(null);
   const [expressionMultipliers, setExpressionMultipliers] =
     useState<ExpressionMultipliers>({
       mouthOpen: 1.0,
@@ -69,6 +75,10 @@ export default function FaceTrackingVRMViewer({
     })
   );
   const bodyCalculatorRef = useRef(new BodyStateCalculator());
+
+  // 디버깅 플래그 (한 번만 로그 출력)
+  const poseLoggedRef = useRef(false);
+  const poseErrorLoggedRef = useRef(false);
 
   // Custom Hooks
   const { videoRef, isReady: isWebcamReady, error: webcamError } = useWebcam();
@@ -181,6 +191,11 @@ export default function FaceTrackingVRMViewer({
           enableBodyTracking
         ) {
           try {
+            // 첫 실행 로그
+            if (!poseLoggedRef.current) {
+              console.log('[상체 추적] detectForVideo 호출 시작');
+            }
+
             const poseResult = (
               poseLandmarkerRef.current as {
                 detectForVideo: (
@@ -200,14 +215,62 @@ export default function FaceTrackingVRMViewer({
             ).detectForVideo(videoRef.current, performance.now());
 
             if (poseResult?.landmarks?.[0]) {
+              // 시각화를 위해 Pose 랜드마크 저장
+              setCurrentPoseLandmarks(poseResult.landmarks[0]);
+
+              // 상체 추적 데이터를 VRM에 적용
               applyBodyTrackingToVRM(
                 vrmRef.current,
                 poseResult.landmarks[0],
                 bodyCalculatorRef.current
               );
+
+              // 디버깅: 첫 프레임에만 로그 출력
+              if (!poseLoggedRef.current) {
+                console.log('✅ [상체 추적] Pose 랜드마크 감지 및 적용 시작:', {
+                  랜드마크수: poseResult.landmarks[0].length,
+                  어깨위치: {
+                    왼쪽: poseResult.landmarks[0][11],
+                    오른쪽: poseResult.landmarks[0][12],
+                  },
+                  팔꿈치위치: {
+                    왼쪽: poseResult.landmarks[0][13],
+                    오른쪽: poseResult.landmarks[0][14],
+                  },
+                  손목위치: {
+                    왼쪽: poseResult.landmarks[0][15],
+                    오른쪽: poseResult.landmarks[0][16],
+                  },
+                  가시성: {
+                    왼쪽어깨:
+                      poseResult.landmarks[0][11].visibility?.toFixed(2),
+                    왼쪽팔꿈치:
+                      poseResult.landmarks[0][13].visibility?.toFixed(2),
+                    왼쪽손목:
+                      poseResult.landmarks[0][15].visibility?.toFixed(2),
+                    오른쪽어깨:
+                      poseResult.landmarks[0][12].visibility?.toFixed(2),
+                    오른쪽팔꿈치:
+                      poseResult.landmarks[0][14].visibility?.toFixed(2),
+                    오른쪽손목:
+                      poseResult.landmarks[0][16].visibility?.toFixed(2),
+                  },
+                });
+                console.log(
+                  '💡 Visibility < 0.5 = 화면에 안 보임 → 기본 자세 유지'
+                );
+                poseLoggedRef.current = true;
+              }
+            } else {
+              // Pose가 감지되지 않으면 null로 설정
+              setCurrentPoseLandmarks(null);
             }
-          } catch {
-            // 추적 실패 무시
+          } catch (err) {
+            // 추적 실패 로그
+            if (!poseErrorLoggedRef.current) {
+              console.warn('[상체 추적] Pose 감지 실패:', err);
+              poseErrorLoggedRef.current = true;
+            }
           }
         }
 
@@ -292,6 +355,7 @@ export default function FaceTrackingVRMViewer({
   };
 
   const handleReset = () => {
+    // 표정 강도 초기화
     const defaultMultipliers: ExpressionMultipliers = {
       mouthOpen: 1.0,
       mouthWidth: 1.0,
@@ -301,6 +365,11 @@ export default function FaceTrackingVRMViewer({
     };
     setExpressionMultipliers(defaultMultipliers);
     faceCalculatorRef.current.setMultipliers(defaultMultipliers);
+
+    // VRM 모델을 기본 자세(Idle Pose)로 리셋
+    if (vrmRef.current) {
+      resetToIdlePose(vrmRef.current);
+    }
   };
 
   return (
@@ -361,7 +430,8 @@ export default function FaceTrackingVRMViewer({
       {showLandmarks && videoRef.current && (
         <WebcamPreview
           videoRef={videoRef}
-          landmarks={currentLandmarks}
+          faceLandmarks={currentLandmarks}
+          poseLandmarks={currentPoseLandmarks}
           width={240}
           height={180}
         />

@@ -122,6 +122,9 @@ export function applyFaceTrackingToVRM(
 
 /**
  * 상체 추적 데이터를 VRM 아바타에 적용
+ *
+ * BodyStateCalculator에서 계산된 회전값을 VRM의 humanoid bone에 적용합니다.
+ * 부드러운 움직임을 위해 lerp(선형 보간)를 사용합니다.
  */
 export function applyBodyTrackingToVRM(
   vrm: VRM,
@@ -134,46 +137,58 @@ export function applyBodyTrackingToVRM(
   const bodyState = calculator.calculateBodyState(landmarks);
   if (!bodyState) return;
 
-  const smoothFactor = 0.2;
+  // 스무딩 팩터: 값이 작을수록 더 부드럽지만 지연이 생김
+  // 0.15 = 매 프레임 목표값의 15%씩 적용 (안정적이고 부드러움)
+  const smoothFactor = 0.15;
 
-  // 척추
+  // 척추 (Spine) - 몸통의 전후/좌우 기울기
   const spine = vrm.humanoid.getNormalizedBoneNode('spine');
   if (spine) {
     spine.rotation.x += (bodyState.spine.x - spine.rotation.x) * smoothFactor;
+    spine.rotation.y += (bodyState.spine.y - spine.rotation.y) * smoothFactor;
     spine.rotation.z += (bodyState.spine.z - spine.rotation.z) * smoothFactor;
   }
 
-  // 가슴
+  // 가슴 (Chest) - 상체의 보조 회전
   const chest = vrm.humanoid.getNormalizedBoneNode('chest');
   if (chest) {
     chest.rotation.x += (bodyState.chest.x - chest.rotation.x) * smoothFactor;
+    chest.rotation.y += (bodyState.chest.y - chest.rotation.y) * smoothFactor;
     chest.rotation.z += (bodyState.chest.z - chest.rotation.z) * smoothFactor;
   }
 
-  // 왼팔
+  // 왼팔 상완 (Left Upper Arm) - 어깨에서 팔꿈치까지
   const leftUpperArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
   if (leftUpperArm) {
+    // X: 팔을 앞뒤로, Y: 팔의 내외전, Z: 팔을 옆으로 들기
     leftUpperArm.rotation.x +=
       (bodyState.leftUpperArm.x - leftUpperArm.rotation.x) * smoothFactor;
     leftUpperArm.rotation.y +=
       (bodyState.leftUpperArm.y - leftUpperArm.rotation.y) * smoothFactor;
+    leftUpperArm.rotation.z +=
+      (bodyState.leftUpperArm.z - leftUpperArm.rotation.z) * smoothFactor;
   }
 
+  // 왼팔 전완 (Left Lower Arm) - 팔꿈치에서 손목까지
   const leftLowerArm = vrm.humanoid.getNormalizedBoneNode('leftLowerArm');
   if (leftLowerArm) {
+    // Z: 팔꿈치 굽힘 (0 = 펴짐, 양수 = 굽힘)
     leftLowerArm.rotation.z +=
       (bodyState.leftLowerArm.z - leftLowerArm.rotation.z) * smoothFactor;
   }
 
-  // 오른팔
+  // 오른팔 상완 (Right Upper Arm)
   const rightUpperArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
   if (rightUpperArm) {
     rightUpperArm.rotation.x +=
       (bodyState.rightUpperArm.x - rightUpperArm.rotation.x) * smoothFactor;
     rightUpperArm.rotation.y +=
       (bodyState.rightUpperArm.y - rightUpperArm.rotation.y) * smoothFactor;
+    rightUpperArm.rotation.z +=
+      (bodyState.rightUpperArm.z - rightUpperArm.rotation.z) * smoothFactor;
   }
 
+  // 오른팔 전완 (Right Lower Arm)
   const rightLowerArm = vrm.humanoid.getNormalizedBoneNode('rightLowerArm');
   if (rightLowerArm) {
     rightLowerArm.rotation.z +=
