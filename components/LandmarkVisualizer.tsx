@@ -3,19 +3,21 @@ import { useRef, useEffect } from 'react';
 interface LandmarkVisualizerProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   landmarks: Array<{ x: number; y: number; z: number }> | null;
+  poseLandmarks?: Array<{ x: number; y: number; z: number }> | null;
   width?: number;
   height?: number;
   enabled: boolean;
 }
 
 /**
- * MediaPipe 얼굴 랜드마크 시각화 컴포넌트
+ * MediaPipe 얼굴 + 상체 랜드마크 시각화 컴포넌트
  *
  * 공식 예제의 DrawingUtils 스타일을 적용합니다.
  */
 export default function LandmarkVisualizer({
   videoRef,
   landmarks,
+  poseLandmarks,
   width = 640,
   height = 480,
   enabled,
@@ -23,7 +25,7 @@ export default function LandmarkVisualizer({
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    if (!enabled || !landmarks || !canvasRef.current || !videoRef.current) {
+    if (!enabled || !canvasRef.current || !videoRef.current) {
       // 비활성화 시 캔버스 클리어
       if (canvasRef.current) {
         const ctx = canvasRef.current.getContext('2d');
@@ -47,40 +49,47 @@ export default function LandmarkVisualizer({
 
     if (videoWidth === 0 || videoHeight === 0) return;
 
-    // 랜드마크 그리기
     ctx.save();
 
-    // 점 그리기 (468개 랜드마크)
-    landmarks.forEach((landmark) => {
-      const x = landmark.x * width;
-      const y = landmark.y * height;
+    // 1. Pose 랜드마크 그리기 (상체) - 빨간색
+    if (poseLandmarks && poseLandmarks.length > 0) {
+      drawPoseLandmarks(ctx, poseLandmarks, width, height);
+    }
 
-      ctx.beginPath();
-      ctx.arc(x, y, 1, 0, 2 * Math.PI);
-      ctx.fillStyle = '#00FF0080'; // 반투명 초록색
-      ctx.fill();
-    });
+    // 2. 얼굴 랜드마크 그리기 (위에 레이어)
+    if (landmarks) {
+      // 점 그리기 (468개 랜드마크)
+      landmarks.forEach((landmark) => {
+        const x = landmark.x * width;
+        const y = landmark.y * height;
 
-    // 주요 연결선 그리기
-    if (landmarks.length > 454) {
-      // 얼굴 윤곽선 (공식 예제 스타일)
-      drawFaceOval(ctx, landmarks, width, height);
+        ctx.beginPath();
+        ctx.arc(x, y, 1, 0, 2 * Math.PI);
+        ctx.fillStyle = '#00FF0080'; // 반투명 초록색
+        ctx.fill();
+      });
 
-      // 눈
-      drawEyes(ctx, landmarks, width, height);
+      // 주요 연결선 그리기
+      if (landmarks.length > 454) {
+        // 얼굴 윤곽선 (공식 예제 스타일)
+        drawFaceOval(ctx, landmarks, width, height);
 
-      // 눈썹
-      drawEyebrows(ctx, landmarks, width, height);
+        // 눈
+        drawEyes(ctx, landmarks, width, height);
 
-      // 입술
-      drawLips(ctx, landmarks, width, height);
+        // 눈썹
+        drawEyebrows(ctx, landmarks, width, height);
 
-      // 홍채
-      drawIris(ctx, landmarks, width, height);
+        // 입술
+        drawLips(ctx, landmarks, width, height);
+
+        // 홍채
+        drawIris(ctx, landmarks, width, height);
+      }
     }
 
     ctx.restore();
-  }, [landmarks, enabled, width, height, videoRef]);
+  }, [landmarks, poseLandmarks, enabled, width, height, videoRef]);
 
   if (!enabled) return null;
 
@@ -92,6 +101,75 @@ export default function LandmarkVisualizer({
       className="absolute top-0 left-0 pointer-events-none"
     />
   );
+}
+
+/**
+ * Pose 랜드마크 그리기 (상체)
+ */
+function drawPoseLandmarks(
+  ctx: CanvasRenderingContext2D,
+  landmarks: Array<{ x: number; y: number; z: number }>,
+  width: number,
+  height: number
+) {
+  // MediaPipe Pose 연결선 정의 (33개 landmark)
+  const POSE_CONNECTIONS = [
+    // 몸통
+    [11, 12], // 어깨
+    [11, 13], // 왼쪽 어깨 -> 팔꿈치
+    [13, 15], // 왼쪽 팔꿈치 -> 손목
+    [12, 14], // 오른쪽 어깨 -> 팔꿈치
+    [14, 16], // 오른쪽 팔꿈치 -> 손목
+    [11, 23], // 왼쪽 어깨 -> 엉덩이
+    [12, 24], // 오른쪽 어깨 -> 엉덩이
+    [23, 24], // 엉덩이
+    // 다리
+    [23, 25], // 왼쪽 엉덩이 -> 무릎
+    [25, 27], // 왼쪽 무릎 -> 발목
+    [24, 26], // 오른쪽 엉덩이 -> 무릎
+    [26, 28], // 오른쪽 무릎 -> 발목
+    // 손
+    [15, 17], // 왼쪽 손목 -> 검지
+    [15, 19], // 왼쪽 손목 -> 새끼
+    [15, 21], // 왼쪽 손목 -> 엄지
+    [16, 18], // 오른쪽 손목 -> 검지
+    [16, 20], // 오른쪽 손목 -> 새끼
+    [16, 22], // 오른쪽 손목 -> 엄지
+    // 발
+    [27, 29], // 왼쪽 발목 -> 발끝
+    [27, 31], // 왼쪽 발목 -> 발뒤꿈치
+    [28, 30], // 오른쪽 발목 -> 발끝
+    [28, 32], // 오른쪽 발목 -> 발뒤꿈치
+    [29, 31], // 왼쪽 발
+    [30, 32], // 오른쪽 발
+  ];
+
+  // 점 그리기 (빨간색)
+  landmarks.forEach((landmark) => {
+    const x = landmark.x * width;
+    const y = landmark.y * height;
+
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, 2 * Math.PI);
+    ctx.fillStyle = '#FF0000CC'; // 빨간색
+    ctx.fill();
+  });
+
+  // 연결선 그리기
+  ctx.strokeStyle = '#FF0000CC'; // 빨간색
+  ctx.lineWidth = 2;
+
+  POSE_CONNECTIONS.forEach(([startIdx, endIdx]) => {
+    if (startIdx < landmarks.length && endIdx < landmarks.length) {
+      const start = landmarks[startIdx];
+      const end = landmarks[endIdx];
+
+      ctx.beginPath();
+      ctx.moveTo(start.x * width, start.y * height);
+      ctx.lineTo(end.x * width, end.y * height);
+      ctx.stroke();
+    }
+  });
 }
 
 /**

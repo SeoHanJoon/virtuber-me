@@ -4,6 +4,7 @@ import LandmarkVisualizer from './LandmarkVisualizer';
 interface WebcamPreviewProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   landmarks: Array<{ x: number; y: number; z: number }> | null;
+  poseLandmarks?: Array<{ x: number; y: number; z: number }> | null;
   width?: number;
   height?: number;
 }
@@ -14,6 +15,7 @@ interface WebcamPreviewProps {
 export default function WebcamPreview({
   videoRef,
   landmarks,
+  poseLandmarks,
   width = 240,
   height = 180,
 }: WebcamPreviewProps) {
@@ -51,6 +53,7 @@ export default function WebcamPreview({
           <LandmarkVisualizer
             videoRef={videoRef}
             landmarks={landmarks}
+            poseLandmarks={poseLandmarks}
             width={width}
             height={height}
             enabled={true}

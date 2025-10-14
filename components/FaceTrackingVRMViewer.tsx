@@ -51,6 +51,11 @@ export default function FaceTrackingVRMViewer({
     y: number;
     z: number;
   }> | null>(null);
+  const [currentPoseLandmarks, setCurrentPoseLandmarks] = useState<Array<{
+    x: number;
+    y: number;
+    z: number;
+  }> | null>(null);
   const [expressionMultipliers, setExpressionMultipliers] =
     useState<ExpressionMultipliers>({
       mouthOpen: 1.0,
@@ -214,6 +219,9 @@ export default function FaceTrackingVRMViewer({
                 poseResult.landmarks[0],
                 bodyCalculatorRef.current
               );
+
+              // 시각화를 위해 Pose 랜드마크 저장
+              setCurrentPoseLandmarks(poseResult.landmarks[0]);
             }
           } catch {
             // 추적 실패 무시
@@ -381,6 +389,7 @@ export default function FaceTrackingVRMViewer({
         <WebcamPreview
           videoRef={videoRef}
           landmarks={currentLandmarks}
+          poseLandmarks={currentPoseLandmarks}
           width={240}
           height={180}
         />
