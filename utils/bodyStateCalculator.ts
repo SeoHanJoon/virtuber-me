@@ -54,11 +54,31 @@ type PoseLandmark = { x: number; y: number; z: number; visibility?: number };
 type HandLandmark = { x: number; y: number; z: number };
 
 /**
+ * 안정화된 회전 상태 (이전 프레임 기반 스무딩용)
+ */
+interface StabilizedRotation {
+  x: number;
+  y: number;
+  z: number;
+  timestamp: number;
+}
+
+/**
  * 상체 상태 계산기
  */
 export class BodyStateCalculator {
   // Visibility 임계값 (이 값보다 낮으면 랜드마크가 보이지 않는 것으로 간주)
   private readonly VISIBILITY_THRESHOLD = 0.3; // 0.5 → 0.3으로 낮춰서 더 적극적으로 추적
+
+  // 이전 프레임 기반 안정화: 팔 회전값 저장
+  private previousLeftUpperArm: StabilizedRotation | null = null;
+  private previousRightUpperArm: StabilizedRotation | null = null;
+  private previousLeftLowerArm: StabilizedRotation | null = null;
+  private previousRightLowerArm: StabilizedRotation | null = null;
+
+  // 깊이값 불안정 보정: 스무딩 팩터
+  private readonly SMOOTHING_FACTOR = 0.35; // 0~1, 높을수록 이전 값을 많이 유지 (안정화)
+  private readonly DEPTH_SENSITIVITY = 0.7; // z축 깊이 민감도 (낮을수록 덜 민감)
 
   // MediaPipe Pose 랜드마크 인덱스
   private readonly POSE_LANDMARKS = {
@@ -129,31 +149,72 @@ export class BodyStateCalculator {
         spineRotation = this.calculateSpineRotation(shoulderCenter, hipCenter);
       }
 
-      // 왼팔 회전 계산
-      const leftArmRotation = this.calculateArmRotation(
+      // 왼팔 회전 계산 (원시 회전값)
+      const leftArmRotationRaw = this.calculateArmRotation(
         landmarks[this.POSE_LANDMARKS.LEFT_SHOULDER],
         landmarks[this.POSE_LANDMARKS.LEFT_ELBOW],
         landmarks[this.POSE_LANDMARKS.LEFT_WRIST],
         'left'
       );
 
-      // 오른팔 회전 계산
-      const rightArmRotation = this.calculateArmRotation(
+      // 오른팔 회전 계산 (원시 회전값)
+      const rightArmRotationRaw = this.calculateArmRotation(
         landmarks[this.POSE_LANDMARKS.RIGHT_SHOULDER],
         landmarks[this.POSE_LANDMARKS.RIGHT_ELBOW],
         landmarks[this.POSE_LANDMARKS.RIGHT_WRIST],
         'right'
       );
 
+      // 의사 3D 회전 보정 및 안정화 적용
+      const now = Date.now();
+
+      // 왼팔 상완 안정화
+      const leftUpperArmStabilized = this.stabilizeAndProject3DArmPose(
+        leftArmRotationRaw.upperArm,
+        this.previousLeftUpperArm,
+        'upperArm'
+      );
+      this.previousLeftUpperArm = { ...leftUpperArmStabilized, timestamp: now };
+
+      // 왼팔 전완 안정화
+      const leftLowerArmStabilized = this.stabilizeAndProject3DArmPose(
+        leftArmRotationRaw.lowerArm,
+        this.previousLeftLowerArm,
+        'lowerArm'
+      );
+      this.previousLeftLowerArm = { ...leftLowerArmStabilized, timestamp: now };
+
+      // 오른팔 상완 안정화
+      const rightUpperArmStabilized = this.stabilizeAndProject3DArmPose(
+        rightArmRotationRaw.upperArm,
+        this.previousRightUpperArm,
+        'upperArm'
+      );
+      this.previousRightUpperArm = {
+        ...rightUpperArmStabilized,
+        timestamp: now,
+      };
+
+      // 오른팔 전완 안정화
+      const rightLowerArmStabilized = this.stabilizeAndProject3DArmPose(
+        rightArmRotationRaw.lowerArm,
+        this.previousRightLowerArm,
+        'lowerArm'
+      );
+      this.previousRightLowerArm = {
+        ...rightLowerArmStabilized,
+        timestamp: now,
+      };
+
       return {
         spine: spineRotation,
         chest: { x: spineRotation.x * 0.7, y: 0, z: spineRotation.z * 0.7 },
-        leftShoulder: leftArmRotation.shoulder,
-        leftUpperArm: leftArmRotation.upperArm,
-        leftLowerArm: leftArmRotation.lowerArm,
-        rightShoulder: rightArmRotation.shoulder,
-        rightUpperArm: rightArmRotation.upperArm,
-        rightLowerArm: rightArmRotation.lowerArm,
+        leftShoulder: leftArmRotationRaw.shoulder,
+        leftUpperArm: leftUpperArmStabilized, // 안정화된 회전값 사용
+        leftLowerArm: leftLowerArmStabilized, // 안정화된 회전값 사용
+        rightShoulder: rightArmRotationRaw.shoulder,
+        rightUpperArm: rightUpperArmStabilized, // 안정화된 회전값 사용
+        rightLowerArm: rightLowerArmStabilized, // 안정화된 회전값 사용
       };
     } catch (error) {
       console.error('[BodyStateCalculator] 계산 오류:', error);
@@ -208,7 +269,7 @@ export class BodyStateCalculator {
 
     // 정규화
     const ndx = dx / length;
-    const ndy = dy / length;
+    const _ndy = dy / length; // y축은 현재 사용하지 않음 (정상 자세가 Y-up 기준이므로)
     const ndz = dz / length;
 
     // 정상 자세: (0, 1, 0) - 엉덩이→어깨가 위쪽 방향
@@ -232,7 +293,14 @@ export class BodyStateCalculator {
   }
 
   /**
-   * 팔 회전 계산
+   * 팔 회전 계산 (좌표계 변환 포함)
+   *
+   * MediaPipe 좌표계 → Three.js 좌표계 변환:
+   * - MediaPipe: X(오른쪽), Y(아래), Z(카메라 방향)
+   * - Three.js/VRM: X(오른쪽), Y(위), Z(카메라 반대 방향)
+   * - 변환: (x, y, z) → (x, -y, -z)
+   *
+   * 주의: z축 깊이값은 상대값이므로 stabilizeAndProject3DArmPose()에서 추가 보정
    */
   private calculateArmRotation(
     shoulder: PoseLandmark,
@@ -254,12 +322,13 @@ export class BodyStateCalculator {
       wristVisibility < this.VISIBILITY_THRESHOLD
     ) {
       // 기본 자세: 팔을 자연스럽게 내린 상태 (idle pose)
+      // 목표값과 동일하게 설정하여 안정화 함수에서 자연스럽게 전환
       return {
         shoulder: { x: 0, y: 0, z: 0 },
         upperArm: {
-          x: 1.2, // 팔을 아래로 (~69도, 자연스러운 idle 자세)
+          x: 0,
           y: 0,
-          z: 0,
+          z: side === 'left' ? -70 : 70,
         },
         lowerArm: {
           x: 0,
@@ -292,7 +361,7 @@ export class BodyStateCalculator {
     if (upperLength < 0.01) {
       return {
         shoulder: { x: 0, y: 0, z: 0 },
-        upperArm: { x: 1.2, y: 0, z: 0 }, // 기본 자세 (팔 내림)
+        upperArm: { x: 0, y: 0, z: side === 'left' ? -70 : 70 },
         lowerArm: { x: 0, y: 0, z: 0 },
       };
     }
@@ -372,6 +441,73 @@ export class BodyStateCalculator {
         z: 0,
       },
     };
+  }
+
+  /**
+   * 의사 3D 회전 보정 및 안정화
+   *
+   * MediaPipe의 z축 깊이값이 상대값이라 불안정한 문제를 해결:
+   * 1. 이전 프레임 회전값과 블렌딩하여 떨림 감소
+   * 2. z축 변화량에 depth sensitivity 적용
+   * 3. 급격한 변화 시 transition damping 적용
+   *
+   * @param currentRotation 현재 프레임의 계산된 회전값 (degree)
+   * @param previousRotation 이전 프레임의 회전값
+   * @param armSide 'left' 또는 'right'
+   * @returns 안정화된 회전값 (degree)
+   */
+  private stabilizeAndProject3DArmPose(
+    currentRotation: { x: number; y: number; z: number },
+    previousRotation: StabilizedRotation | null,
+    _armSide: 'upperArm' | 'lowerArm' // eslint-disable-line @typescript-eslint/no-unused-vars
+  ): { x: number; y: number; z: number } {
+    // 첫 프레임이거나 이전 값이 없으면 현재 값 그대로 반환
+    if (!previousRotation) {
+      return { ...currentRotation };
+    }
+
+    const now = Date.now();
+    const timeDelta = now - previousRotation.timestamp;
+
+    // 프레임 간격이 너무 길면 (500ms 이상) 이전 값 무시
+    if (timeDelta > 500) {
+      return { ...currentRotation };
+    }
+
+    // 깊이값 불안정 보정: z축에는 민감도를 낮춰서 적용
+    const stabilized = {
+      x: 0,
+      y: 0,
+      z: 0,
+    };
+
+    // 각 축마다 스무딩 적용
+    for (const axis of ['x', 'y', 'z'] as const) {
+      const current = currentRotation[axis];
+      const previous = previousRotation[axis];
+      const delta = current - previous;
+
+      // z축은 깊이 민감도를 적용하여 덜 민감하게
+      const sensitivity = axis === 'z' ? this.DEPTH_SENSITIVITY : 1.0;
+
+      // 급격한 변화 감지 (transition damping)
+      const absDelta = Math.abs(delta);
+      let smoothFactor = this.SMOOTHING_FACTOR;
+
+      if (absDelta > 15) {
+        // 15도 이상 급변: 더 강한 스무딩
+        smoothFactor = 0.6;
+      } else if (absDelta > 30) {
+        // 30도 이상 급변: 매우 강한 스무딩 (떨림 방지)
+        smoothFactor = 0.75;
+      }
+
+      // 이전 프레임 기반 안정화: 선형 보간 (LERP)
+      stabilized[axis] =
+        previous * smoothFactor + current * sensitivity * (1 - smoothFactor);
+    }
+
+    return stabilized;
   }
 
   /**
