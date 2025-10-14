@@ -28,6 +28,8 @@ export default function FaceTrackingVRMViewer({
   mirrorMode: initialMirrorMode = false,
   rotateModel: initialRotateModel = false,
   invertPitch: initialInvertPitch = false,
+  manualControlEnabled = false,
+  onVRMChange,
 }: FaceTrackingVRMViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -90,7 +92,10 @@ export default function FaceTrackingVRMViewer({
     mirrorMode,
     rotateModel,
     onError: setError,
-    onVRMLoaded: () => setIsVRMLoaded(true),
+    onVRMLoaded: () => {
+      setIsVRMLoaded(true);
+      onVRMChange?.(vrmRef.current);
+    },
   });
 
   // 에러 동기화
@@ -129,11 +134,12 @@ export default function FaceTrackingVRMViewer({
       const deltaTime = clock.getDelta();
 
       if (vrmRef.current) {
-        // 얼굴 추적
+        // 얼굴 추적 (수동 제어 비활성화 시에만)
         if (
           faceLandmarkerRef.current &&
           videoRef.current &&
-          videoRef.current.currentTime !== lastVideoTime
+          videoRef.current.currentTime !== lastVideoTime &&
+          !manualControlEnabled
         ) {
           lastVideoTime = videoRef.current.currentTime;
 
@@ -174,11 +180,12 @@ export default function FaceTrackingVRMViewer({
           }
         }
 
-        // 상체 추적
+        // 상체 추적 (수동 제어 비활성화 시에만)
         if (
           poseLandmarkerRef.current &&
           videoRef.current &&
-          enableBodyTracking
+          enableBodyTracking &&
+          !manualControlEnabled
         ) {
           try {
             const poseResult = (
@@ -211,11 +218,12 @@ export default function FaceTrackingVRMViewer({
           }
         }
 
-        // 손 추적
+        // 손 추적 (수동 제어 비활성화 시에만)
         if (
           handLandmarkerRef.current &&
           videoRef.current &&
-          enableHandTracking
+          enableHandTracking &&
+          !manualControlEnabled
         ) {
           try {
             const handResult = (
@@ -276,6 +284,7 @@ export default function FaceTrackingVRMViewer({
     invertPitch,
     enableBodyTracking,
     enableHandTracking,
+    manualControlEnabled, // 수동 제어 모드 🆕
   ]);
 
   // 표정 강도 변경 핸들러

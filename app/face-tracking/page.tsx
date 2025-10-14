@@ -1,12 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import FaceTrackingVRMViewer from '@/components/FaceTrackingVRMViewer';
+import VRMManualControl from '@/components/VRMManualControl';
 import { useVRMModels } from '@/hooks/useVRMModels';
+import type { VRM } from '@pixiv/three-vrm';
 
 export default function FaceTrackingPage() {
   const { models, selectedModel, setSelectedModel, isLoading } = useVRMModels();
   const [isStarted, setIsStarted] = useState(false);
+  const [manualControlEnabled, setManualControlEnabled] = useState(false);
+  const vrmRef = useRef<VRM | null>(null);
 
   return (
     <div className="min-h-screen p-8 pb-20 sm:p-20 font-sans">
@@ -100,33 +104,53 @@ export default function FaceTrackingPage() {
           </div>
         ) : (
           /* 얼굴 추적 화면 */
-          <div className="max-w-4xl mx-auto">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-              <div className="flex justify-center items-center bg-gradient-to-br from-purple-50 to-pink-50 dark:from-gray-900 dark:to-gray-800 rounded-lg p-4">
-                <FaceTrackingVRMViewer
-                  modelPath={selectedModel}
-                  width={600}
-                  height={600}
-                  className="rounded-lg"
-                />
+          <div>
+            {/* 캔버스 + 수동 제어 패널 */}
+            <div className="flex gap-6">
+              {/* VRM 캔버스 */}
+              <div className="flex-1">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+                  <div className="flex justify-center items-center bg-gradient-to-br from-purple-50 to-pink-50 dark:from-gray-900 dark:to-gray-800 rounded-lg p-4">
+                    <FaceTrackingVRMViewer
+                      modelPath={selectedModel}
+                      width={600}
+                      height={600}
+                      className="rounded-lg"
+                      manualControlEnabled={manualControlEnabled}
+                      onVRMChange={(vrm) => (vrmRef.current = vrm)}
+                    />
+                  </div>
+                </div>
+
+                {/* 종료 버튼 */}
+                <div className="mt-4 text-center">
+                  <button
+                    onClick={() => setIsStarted(false)}
+                    className="bg-gray-500 hover:bg-gray-600 text-white font-medium py-2 px-8 rounded-lg transition-all shadow-lg"
+                  >
+                    종료하기
+                  </button>
+                </div>
+
+                {/* 안내 */}
+                <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                  <p className="text-sm text-blue-900 dark:text-blue-300 text-center">
+                    💡 설정은 우측 상단 <strong>⚙️ 설정</strong> 버튼을
+                    클릭하세요
+                  </p>
+                </div>
               </div>
-            </div>
 
-            {/* 종료 버튼 */}
-            <div className="mt-4 text-center">
-              <button
-                onClick={() => setIsStarted(false)}
-                className="bg-gray-500 hover:bg-gray-600 text-white font-medium py-2 px-8 rounded-lg transition-all shadow-lg"
-              >
-                종료하기
-              </button>
-            </div>
-
-            {/* 안내 */}
-            <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-              <p className="text-sm text-blue-900 dark:text-blue-300 text-center">
-                💡 설정은 우측 상단 <strong>⚙️ 설정</strong> 버튼을 클릭하세요
-              </p>
+              {/* 수동 제어 패널 */}
+              <div className="w-96">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 sticky top-4">
+                  <VRMManualControl
+                    vrm={vrmRef.current}
+                    enabled={manualControlEnabled}
+                    onEnabledChange={setManualControlEnabled}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         )}
