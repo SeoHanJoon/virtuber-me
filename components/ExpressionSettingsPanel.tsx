@@ -23,7 +23,7 @@ interface ExpressionSettingsPanelProps {
   enableHandTracking: boolean;
   onHandTrackingChange: (enabled: boolean) => void;
   showLandmarks: boolean;
-  onShowLandmarksChange: (show: boolean) => void;
+  onShowLandmarksChange?: (show: boolean) => void; // Optional: 외부에서 제어될 수 있음
   // 모델 변형 설정
   mirrorMode: boolean;
   onMirrorModeChange: (enabled: boolean) => void;

@@ -6,7 +6,7 @@ interface TrackingControlSectionProps {
   enableHandTracking: boolean;
   onHandTrackingChange: (enabled: boolean) => void;
   showLandmarks: boolean;
-  onShowLandmarksChange: (show: boolean) => void;
+  onShowLandmarksChange?: (show: boolean) => void; // Optional: 외부에서 제어될 수 있음
 }
 
 /**
@@ -99,27 +99,29 @@ export default function TrackingControlSection({
         </span>
       </div>
 
-      {/* 랜드마크 시각화 토글 */}
-      <div className="flex items-center justify-between p-3 bg-gray-800 rounded-lg">
-        <label className="flex items-center gap-3 cursor-pointer flex-1">
-          <input
-            type="checkbox"
-            checked={showLandmarks}
-            onChange={(e) => onShowLandmarksChange(e.target.checked)}
-            className="w-5 h-5 rounded"
-          />
-          <span className="text-sm">👁️ 랜드마크 표시</span>
-        </label>
-        <span
-          className={`text-xs font-medium px-2 py-1 rounded ${
-            showLandmarks
-              ? 'bg-green-600 text-white'
-              : 'bg-gray-700 text-gray-400'
-          }`}
-        >
-          {showLandmarks ? 'ON' : 'OFF'}
-        </span>
-      </div>
+      {/* 랜드마크 시각화 토글 (외부 제어가 없을 때만 표시) */}
+      {onShowLandmarksChange && (
+        <div className="flex items-center justify-between p-3 bg-gray-800 rounded-lg">
+          <label className="flex items-center gap-3 cursor-pointer flex-1">
+            <input
+              type="checkbox"
+              checked={showLandmarks}
+              onChange={(e) => onShowLandmarksChange(e.target.checked)}
+              className="w-5 h-5 rounded"
+            />
+            <span className="text-sm">👁️ 랜드마크 표시</span>
+          </label>
+          <span
+            className={`text-xs font-medium px-2 py-1 rounded ${
+              showLandmarks
+                ? 'bg-green-600 text-white'
+                : 'bg-gray-700 text-gray-400'
+            }`}
+          >
+            {showLandmarks ? 'ON' : 'OFF'}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

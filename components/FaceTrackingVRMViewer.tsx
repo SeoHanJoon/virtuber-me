@@ -29,6 +29,7 @@ export default function FaceTrackingVRMViewer({
   rotateModel: initialRotateModel = false,
   invertPitch: initialInvertPitch = false,
   manualControlEnabled = false,
+  showLandmarks: externalShowLandmarks,
   onVRMChange,
 }: FaceTrackingVRMViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -38,7 +39,8 @@ export default function FaceTrackingVRMViewer({
   const [error, setError] = useState<string | null>(null);
   const [enableBodyTracking, setEnableBodyTracking] = useState(false);
   const [enableHandTracking, setEnableHandTracking] = useState(false);
-  const [showLandmarks, setShowLandmarks] = useState(false);
+  const [internalShowLandmarks, setInternalShowLandmarks] = useState(false);
+  const showLandmarks = externalShowLandmarks ?? internalShowLandmarks;
   const [showBlendShapes, setShowBlendShapes] = useState(false);
   const [isFaceLandmarkerReady, setIsFaceLandmarkerReady] = useState(false);
   const [isVRMLoaded, setIsVRMLoaded] = useState(false);
@@ -344,7 +346,7 @@ export default function FaceTrackingVRMViewer({
         isVRMLoaded={isVRMLoaded}
       />
 
-      {/* 통합 설정 패널 */}
+      {/* 통합 설정 패널 (랜드마크 표시 제외) */}
       <ExpressionSettingsPanel
         multipliers={expressionMultipliers}
         onMultiplierChange={handleMultiplierChange}
@@ -352,8 +354,16 @@ export default function FaceTrackingVRMViewer({
         onBodyTrackingChange={setEnableBodyTracking}
         enableHandTracking={enableHandTracking}
         onHandTrackingChange={setEnableHandTracking}
-        showLandmarks={showLandmarks}
-        onShowLandmarksChange={setShowLandmarks}
+        showLandmarks={
+          externalShowLandmarks !== undefined
+            ? showLandmarks
+            : internalShowLandmarks
+        }
+        onShowLandmarksChange={
+          externalShowLandmarks !== undefined
+            ? undefined
+            : setInternalShowLandmarks
+        }
         mirrorMode={mirrorMode}
         onMirrorModeChange={setMirrorMode}
         rotateModel={rotateModel}

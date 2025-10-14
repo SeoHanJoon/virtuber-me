@@ -10,6 +10,7 @@ export default function FaceTrackingPage() {
   const { models, selectedModel, setSelectedModel, isLoading } = useVRMModels();
   const [isStarted, setIsStarted] = useState(false);
   const [manualControlEnabled, setManualControlEnabled] = useState(false);
+  const [showLandmarks, setShowLandmarks] = useState(false);
   const vrmRef = useRef<VRM | null>(null);
 
   return (
@@ -117,6 +118,7 @@ export default function FaceTrackingPage() {
                       height={600}
                       className="rounded-lg"
                       manualControlEnabled={manualControlEnabled}
+                      showLandmarks={showLandmarks}
                       onVRMChange={(vrm) => (vrmRef.current = vrm)}
                     />
                   </div>
@@ -143,7 +145,23 @@ export default function FaceTrackingPage() {
 
               {/* 수동 제어 패널 */}
               <div className="w-96">
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 sticky top-4">
+                {/* 랜드마크 표시 버튼 */}
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 mb-4 sticky top-4">
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showLandmarks}
+                      onChange={(e) => setShowLandmarks(e.target.checked)}
+                      className="w-4 h-4 text-cyan-600 bg-gray-100 border-gray-300 rounded focus:ring-cyan-500 dark:focus:ring-cyan-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                    />
+                    <span className="ml-3 text-sm font-medium text-gray-900 dark:text-gray-300">
+                      📍 랜드마크 표시
+                    </span>
+                  </label>
+                </div>
+
+                {/* 수동 제어 패널 */}
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 sticky top-28">
                   <VRMManualControl
                     vrm={vrmRef.current}
                     enabled={manualControlEnabled}

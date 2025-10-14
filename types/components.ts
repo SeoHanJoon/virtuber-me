@@ -28,6 +28,7 @@ export interface FaceTrackingVRMViewerProps {
   rotateModel?: boolean; // 모델 180도 회전
   invertPitch?: boolean; // pitch 추적 반전 (위아래 반대)
   manualControlEnabled?: boolean; // 수동 제어 활성화 (자동 추적 비활성화)
+  showLandmarks?: boolean; // 랜드마크 표시 여부
   onVRMChange?: (vrm: VRM | null) => void; // VRM 인스턴스 변경 콜백
 }
 
