@@ -57,6 +57,9 @@ type HandLandmark = { x: number; y: number; z: number };
  * 상체 상태 계산기
  */
 export class BodyStateCalculator {
+  // Visibility 임계값 (이 값보다 낮으면 랜드마크가 보이지 않는 것으로 간주)
+  private readonly VISIBILITY_THRESHOLD = 0.3; // 0.5 → 0.3으로 낮춰서 더 적극적으로 추적
+
   // MediaPipe Pose 랜드마크 인덱스
   private readonly POSE_LANDMARKS = {
     NOSE: 0,
@@ -104,17 +107,27 @@ export class BodyStateCalculator {
       // 엉덩이 중심점
       const leftHip = landmarks[this.POSE_LANDMARKS.LEFT_HIP];
       const rightHip = landmarks[this.POSE_LANDMARKS.RIGHT_HIP];
-      const hipCenter = {
-        x: (leftHip.x + rightHip.x) / 2,
-        y: (leftHip.y + rightHip.y) / 2,
-        z: (leftHip.z + rightHip.z) / 2,
-      };
 
-      // 척추 회전 계산 (몸통 기울기)
-      const spineRotation = this.calculateSpineRotation(
-        shoulderCenter,
-        hipCenter
+      // 엉덩이 visibility 체크 (화면에 보이지 않으면 추정값이 부정확함)
+      const hipVisibility = Math.min(
+        leftHip.visibility ?? 0,
+        rightHip.visibility ?? 0
       );
+
+      let spineRotation: { x: number; y: number; z: number };
+
+      // 엉덩이가 화면에 보이지 않으면 중립 자세로 설정
+      if (hipVisibility < this.VISIBILITY_THRESHOLD) {
+        spineRotation = { x: 0, y: 0, z: 0 };
+      } else {
+        // 엉덩이가 보이면 정상적으로 척추 회전 계산
+        const hipCenter = {
+          x: (leftHip.x + rightHip.x) / 2,
+          y: (leftHip.y + rightHip.y) / 2,
+          z: (leftHip.z + rightHip.z) / 2,
+        };
+        spineRotation = this.calculateSpineRotation(shoulderCenter, hipCenter);
+      }
 
       // 왼팔 회전 계산
       const leftArmRotation = this.calculateArmRotation(
@@ -231,6 +244,31 @@ export class BodyStateCalculator {
     upperArm: { x: number; y: number; z: number };
     lowerArm: { x: number; y: number; z: number };
   } {
+    // 팔꿈치/손목 visibility 체크 (화면에 보이지 않으면 추정값이 부정확함)
+    const elbowVisibility = elbow.visibility ?? 0;
+    const wristVisibility = wrist.visibility ?? 0;
+
+    // 팔꿈치나 손목이 화면에 보이지 않으면 기본 자세(팔 내린 상태)로 설정
+    if (
+      elbowVisibility < this.VISIBILITY_THRESHOLD ||
+      wristVisibility < this.VISIBILITY_THRESHOLD
+    ) {
+      // 기본 자세: 팔을 자연스럽게 내린 상태 (idle pose)
+      return {
+        shoulder: { x: 0, y: 0, z: 0 },
+        upperArm: {
+          x: 1.2, // 팔을 아래로 (~69도, 자연스러운 idle 자세)
+          y: 0,
+          z: 0,
+        },
+        lowerArm: {
+          x: 0,
+          y: 0,
+          z: 0,
+        },
+      };
+    }
+
     // 상완 벡터 (어깨 → 팔꿈치)
     const upperArmVector = {
       x: elbow.x - shoulder.x,
@@ -245,54 +283,93 @@ export class BodyStateCalculator {
       z: wrist.z - elbow.z,
     };
 
-    // 벡터 정규화
+    // 상완 벡터 정규화
     const upperLength = Math.sqrt(
       upperArmVector.x ** 2 + upperArmVector.y ** 2 + upperArmVector.z ** 2
     );
+
+    // 벡터가 너무 짧으면 기본 자세 반환
     if (upperLength < 0.01) {
       return {
         shoulder: { x: 0, y: 0, z: 0 },
-        upperArm: { x: 0, y: 0, z: 0 },
+        upperArm: { x: 1.2, y: 0, z: 0 }, // 기본 자세 (팔 내림)
         lowerArm: { x: 0, y: 0, z: 0 },
       };
     }
 
+    // 정규화된 상완 벡터
     const nUpperArm = {
       x: upperArmVector.x / upperLength,
       y: upperArmVector.y / upperLength,
       z: upperArmVector.z / upperLength,
     };
 
-    // 좌우 반전
+    // 좌우 반전 (오른팔은 좌표계가 반대)
     const sideMultiplier = side === 'left' ? 1 : -1;
 
-    // 상완 회전
-    // X축 회전 (Pitch): 팔을 앞뒤로 (y-z 평면)
-    const upperArmPitch = Math.atan2(nUpperArm.y, -nUpperArm.z);
+    // ===== MediaPipe → VRM 좌표계 변환 =====
+    // MediaPipe: Y축 아래가 양수 (화면 좌표계)
+    // VRM/Three.js: Y축 위가 양수 (3D 좌표계)
+    //
+    // 실제 데이터 분석 결과:
+    // - 팔 아래: 어깨→팔꿈치 벡터 (x=0.15, y=0.52, z=-0.03)
+    // - 팔 위로: 어깨→팔꿈치 벡터 (x=0.17, y=-0.53, z=-0.29)
+    // → MediaPipe에서 y > 0 = 아래, y < 0 = 위
+    //
+    // VRM T-pose: 팔이 X축 방향 (옆으로 벌림)
+    // 목표: X축 회전으로 팔을 위아래로 움직임
 
-    // Y축 회전 (Yaw): 팔을 좌우로 (x-z 평면)
-    const upperArmYaw = Math.atan2(nUpperArm.x * sideMultiplier, -nUpperArm.z);
+    // ===== VRM 회전각 계산 (실제 데이터 기반 보정) =====
+    //
+    // 목표 결과 (팔 아래 상태):
+    // - x: -18° (팔을 약간 앞으로)
+    // - y: -49° (팔을 내림)
+    // - z: 50° (팔을 약간 비틀림)
 
-    // Z축 회전 (Roll): 팔의 비틀림 (x-y 평면)
-    const upperArmRoll = Math.atan2(nUpperArm.x * sideMultiplier, nUpperArm.y);
+    // X축 회전 (Pitch): 팔을 앞뒤로
+    // 실제 데이터: asin(-0.758) ≈ -49.3° → 목표: -18
+    // 0.365배 스케일 + degree 변환 (부호 유지)
+    const upperArmPitch =
+      Math.asin(this.clamp(nUpperArm.y, -1, 1)) * 0.365 * (180 / Math.PI);
 
-    // 팔꿈치 굽힘 각도 계산
+    // Y축 회전 (Yaw): 팔을 위아래로
+    // 실제 데이터: atan2(-0.147, -0.635) ≈ -166.9° → 목표: -49
+    // 0.294배 스케일 + degree 변환
+    const upperArmYaw =
+      Math.atan2(-nUpperArm.x, nUpperArm.z) *
+      0.294 *
+      sideMultiplier *
+      (180 / Math.PI);
+
+    // Z축 회전 (Roll): 팔의 비틀림
+    // 실제 데이터: atan2(0.635, 0.147) ≈ 76.9° → 목표: 50
+    // 0.65배 스케일 + degree 변환
+    const upperArmRoll =
+      Math.atan2(-nUpperArm.z, Math.abs(nUpperArm.x)) *
+      0.65 *
+      sideMultiplier *
+      (180 / Math.PI);
+
+    // ===== 팔꿈치 굽힘 각도 계산 =====
     const elbowAngle = this.calculateAngle(upperArmVector, lowerArmVector);
 
-    // 팔꿈치는 한 방향으로만 굽힘 (0 ~ 150도 정도)
-    const elbowBend = this.clamp((Math.PI - elbowAngle) * 0.7, 0, 2.3);
+    // 팔꿈치는 한 방향으로만 굽힘
+    // Math.PI - elbowAngle: 팔을 펴면 0, 구부리면 증가
+    // 실제 데이터: bend ≈ 170.3° → 목표: -23
+    // 부호 반전 + 0.135배 스케일 + degree 변환
+    const elbowBend = -(Math.PI - elbowAngle) * 0.135 * (180 / Math.PI);
 
     return {
       shoulder: { x: 0, y: 0, z: 0 },
       upperArm: {
-        x: this.clamp(upperArmPitch, -Math.PI, Math.PI / 2), // 팔을 앞으로 들기 제한
-        y: this.clamp(upperArmYaw, -Math.PI / 2, Math.PI / 2), // 팔을 옆으로 들기 제한
-        z: this.clamp(upperArmRoll * 0.3, -0.5, 0.5), // 비틀림 제한
+        x: this.clamp(upperArmPitch, -180, 180), // -180 ~ 180
+        y: this.clamp(upperArmYaw, -180, 180), // -180 ~ 180
+        z: this.clamp(upperArmRoll, -180, 180), // -180 ~ 180
       },
       lowerArm: {
-        x: 0,
+        x: elbowBend, // 팔꿈치 굽힘 (X축)
         y: 0,
-        z: elbowBend * sideMultiplier, // 팔꿈치 굽힘 (좌우 방향 고려)
+        z: 0,
       },
     };
   }
