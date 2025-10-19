@@ -31,6 +31,17 @@ interface VRMBodyControllerProps {
 
   // 트래킹 시작/중지 트리거
   isTrackingActive: boolean;
+
+  // 키포인트 업데이트 콜백 (랜드마크 시각화용)
+  onKeypointsUpdate?: (
+    keypoints: Array<{
+      x: number;
+      y: number;
+      z?: number;
+      score?: number;
+      name?: string;
+    }> | null
+  ) => void;
 }
 
 export function VRMBodyController({
@@ -41,6 +52,7 @@ export function VRMBodyController({
   trackingOptions,
   onVRMLoaded,
   isTrackingActive,
+  onKeypointsUpdate,
 }: VRMBodyControllerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const vrmRef = useRef<VRM | null>(null);
@@ -61,8 +73,7 @@ export function VRMBodyController({
     isBodyTrackingReady,
     startBodyTracking,
     stopBodyTracking,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    keypoints: _keypoints, // 디버깅용으로 사용하지 않음
+    keypoints, // 랜드마크 시각화에 사용
     error,
   } = useBodyTracking(videoRef, trackingOptions);
 
@@ -72,6 +83,13 @@ export function VRMBodyController({
       console.error('[VRMBodyController] useBodyTracking 에러:', error);
     }
   }, [error]);
+
+  // 키포인트 업데이트 전달
+  useEffect(() => {
+    if (onKeypointsUpdate) {
+      onKeypointsUpdate(keypoints);
+    }
+  }, [keypoints, onKeypointsUpdate]);
 
   // 트래킹 활성화/비활성화
   useEffect(() => {

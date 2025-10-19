@@ -204,10 +204,14 @@ export function useBodyTracking(
           return;
         }
 
-        // MoveNet은 이미 0~1 범위로 정규화된 좌표를 반환
-        // 중심을 (0,0)으로 이동하고, Y축은 Three.js와 일치하도록 반전 (위가 양수)
-        const normalizedX = kp.x - 0.5;
-        const normalizedY = 0.5 - kp.y; // Y축 반전
+        // MoveNet은 픽셀 좌표를 반환하므로 먼저 0~1로 정규화
+        const normalizedX_0to1 = kp.x / videoWidth;
+        const normalizedY_0to1 = kp.y / videoHeight;
+
+        // 중심을 (0,0)으로 이동: 0~1 → -0.5~0.5
+        // Y축은 Three.js와 일치하도록 반전 (위가 양수)
+        const normalizedX = normalizedX_0to1 - 0.5;
+        const normalizedY = 0.5 - normalizedY_0to1; // Y축 반전
 
         // Z축: MoveNet은 z값을 제공하지 않으므로 Y 기반 근사값 사용
         let normalizedZ: number;
@@ -216,7 +220,7 @@ export function useBodyTracking(
           normalizedZ = -kp.z * depthScale;
         } else {
           // MoveNet Fallback: Y 기반 깊이 근사 (위로 갈수록 앞에 있다고 가정)
-          normalizedZ = -(kp.y - 0.5) * depthScale;
+          normalizedZ = -(normalizedY_0to1 - 0.5) * depthScale;
         }
 
         const currentPoint = new THREE.Vector3(
