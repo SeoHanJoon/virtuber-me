@@ -11,7 +11,9 @@ export default function BodyTrackingTestPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isWebcamReady, setIsWebcamReady] = useState(false);
   const [webcamError, setWebcamError] = useState<string | null>(null);
-  const [selectedVrm, setSelectedVrm] = useState('/models/sample.vrm');
+  const [selectedVrm, setSelectedVrm] = useState(
+    '/models/VRM1_Constraint_Twist_Sample.vrm'
+  );
   const [isTrackingActive, setIsTrackingActive] = useState(false);
 
   // 웹캠 스트림 설정
@@ -101,8 +103,9 @@ export default function BodyTrackingTestPage() {
               onChange={handleVrmChange}
               className="block w-full p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-blue-500 focus:border-blue-500"
             >
-              <option value="/models/sample.vrm">Sample VRM</option>
-              <option value="/models/furina.vrm">Furina</option>
+              <option value="/models/VRM1_Constraint_Twist_Sample">
+                Sample VRM
+              </option>
               {/* 다른 VRM 모델 추가 */}
             </select>
           </div>
@@ -140,8 +143,11 @@ export default function BodyTrackingTestPage() {
         {/* VRM 렌더링 영역 */}
         <div className="w-1/2 flex flex-col items-center bg-gray-800 p-4 rounded-lg shadow-lg">
           <h2 className="text-xl font-semibold mb-2">VRM 아바타</h2>
-          <div className="relative w-full max-w-md aspect-video bg-gray-900 rounded-md overflow-hidden">
-            {isWebcamReady && (
+          <div
+            className="relative bg-gray-900 rounded-md overflow-hidden"
+            style={{ width: '640px', height: '480px' }}
+          >
+            {isWebcamReady ? (
               <VRMBodyController
                 videoRef={videoRef}
                 vrmUrl={selectedVrm}
@@ -156,12 +162,18 @@ export default function BodyTrackingTestPage() {
                   minConfidence: 0.3,
                 }}
               />
-            )}
-            {!isWebcamReady && (
+            ) : (
               <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-70">
                 <p>웹캠이 준비되지 않았습니다.</p>
               </div>
             )}
+          </div>
+
+          <div className="mt-4 p-3 bg-yellow-900 bg-opacity-50 rounded-md text-xs max-w-md">
+            <p className="font-semibold mb-1">🎯 트래킹 팁:</p>
+            <p>• 상체가 전체적으로 화면에 보이도록 하세요</p>
+            <p>• 조명이 밝은 곳에서 사용하세요</p>
+            <p>• VRM 모델이 움직이지 않으면 웹캠을 확인하세요</p>
           </div>
         </div>
       </div>

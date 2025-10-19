@@ -76,7 +76,12 @@ export function VRMBodyController({
    * Three.js 씬 초기화
    */
   useEffect(() => {
-    if (!canvasRef.current) return;
+    if (!canvasRef.current) {
+      console.warn('[VRMBodyController] Canvas ref가 없습니다');
+      return;
+    }
+
+    console.log('[VRMBodyController] Three.js 씬 초기화 시작');
 
     const scene = new THREE.Scene();
     sceneRef.current = scene;
@@ -93,6 +98,12 @@ export function VRMBodyController({
     renderer.setSize(width, height);
     renderer.setPixelRatio(window.devicePixelRatio);
     rendererRef.current = renderer;
+
+    console.log('[VRMBodyController] 렌더러 설정 완료:', {
+      width,
+      height,
+      pixelRatio: window.devicePixelRatio,
+    });
 
     // 조명
     const light = new THREE.DirectionalLight(0xffffff);
@@ -117,6 +128,8 @@ export function VRMBodyController({
       controls.update();
       renderer.render(scene, camera);
     };
+
+    console.log('[VRMBodyController] 애니메이션 루프 시작');
     animate();
 
     return () => {
@@ -141,16 +154,27 @@ export function VRMBodyController({
       vrmUrl,
       (gltf) => {
         const vrm = gltf.userData.vrm as VRM;
-        if (!vrm || !sceneRef.current) return;
+        if (!vrm || !sceneRef.current) {
+          console.error(
+            '[VRMBodyController] VRM 로드 실패: vrm 데이터가 없습니다'
+          );
+          return;
+        }
 
         // 기존 VRM 제거
-        if (vrmRef.current) {
+        if (vrmRef.current && sceneRef.current) {
           sceneRef.current.remove(vrmRef.current.scene);
+          console.log('[VRMBodyController] 기존 VRM 제거됨');
         }
 
         // VRM 씬에 추가
         sceneRef.current.add(vrm.scene);
         vrmRef.current = vrm;
+        console.log('[VRMBodyController] VRM 씬에 추가됨:', {
+          position: vrm.scene.position,
+          scale: vrm.scene.scale,
+          visible: vrm.scene.visible,
+        });
 
         // 기본 오프셋 저장 (T-pose 기준)
         const leftUpperArm = vrm.humanoid.getNormalizedBoneNode(
@@ -279,22 +303,30 @@ export function VRMBodyController({
   }, [bodyState, isVRMLoaded, applyBodyStateToVRM]);
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full bg-gray-900">
       <canvas ref={canvasRef} className="w-full h-full" />
-      {!isBodyTrackingReady && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 text-white text-lg">
-          MoveNet 모델 로딩 중...
+
+      {/* VRM 로딩 상태 */}
+      {!isVRMLoaded && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-70 text-white text-lg">
+          <div className="text-center">
+            <div className="mb-2 h-8 w-8 animate-spin rounded-full border-4 border-white border-t-transparent mx-auto" />
+            <p>VRM 모델 로딩 중...</p>
+          </div>
         </div>
       )}
-      {keypoints && (
-        <div className="absolute top-0 left-0 p-2 text-white text-xs bg-black bg-opacity-50 max-h-60 overflow-y-auto">
-          <p className="font-semibold">Keypoints:</p>
-          {keypoints.map((kp) => (
-            <p key={kp.name}>
-              {kp.name}: ({kp.x?.toFixed(2)}, {kp.y?.toFixed(2)},{' '}
-              {kp.z?.toFixed(2)}) Score: {kp.score?.toFixed(2)}
-            </p>
-          ))}
+
+      {/* MoveNet 로딩 상태 */}
+      {!isBodyTrackingReady && isVRMLoaded && (
+        <div className="absolute top-2 right-2 p-2 bg-blue-600 bg-opacity-80 text-white text-xs rounded">
+          MoveNet 초기화 중...
+        </div>
+      )}
+
+      {/* 트래킹 상태 표시 (키포인트는 디버그용으로 숨김) */}
+      {isVRMLoaded && isBodyTrackingReady && (
+        <div className="absolute top-2 right-2 p-2 bg-green-600 bg-opacity-80 text-white text-xs rounded">
+          ✓ 트래킹 활성화
         </div>
       )}
     </div>
