@@ -7,7 +7,7 @@
 - **VRM 모델 뷰어**: 3D 아바타 확인 및 탐색
 - **실시간 얼굴 추적**: 웹캠으로 아바타 실시간 조종 (정밀 표정 인식 🎯)
 - **상체 및 손 추적**: MediaPipe Pose/Hand로 상체 움직임 및 손가락 제스처 추적 🙆✋
-- **MoveNet 상체 트래킹**: TensorFlow.js 기반 단안 카메라 3D 상체 추적 🆕🎯
+- **MoveNet 상체 트래킹**: TensorFlow.js 기반 단안 카메라 상체 추적 (안정적, 빠름) 🆕🎯
 - **VRM 수동 제어**: 슬라이더로 각 본(Bone) 회전을 직접 조절 🎮
 - **멀티플레이어 월드**: 최대 100명이 동시 접속 가능한 VRM 아바타 월드 🎉
 - **고급 얼굴 분석**: 입 모양, 눈 깜빡임, 시선, 미소 감지 (468+ 랜드마크)
@@ -21,7 +21,7 @@
 - **3D 렌더링**: Three.js + @pixiv/three-vrm
 - **추적**:
   - MediaPipe Face/Pose/Hand Landmarker
-  - TensorFlow.js + MoveNet (단안 카메라 3D 추적) 🆕
+  - TensorFlow.js + MoveNet (단안 카메라 2D 추적, 안정적) 🆕
 - **멀티플레이어**: Socket.IO + Express
 - **코드 품질**: ESLint + Prettier + Husky
 - **Node.js**: 22.20.0
@@ -365,17 +365,18 @@ mood: "happy" // 감정 상태
 - 부드러운 움직임 보장
 - 설정 가능한 smoothingFactor (0~1)
 
-**Quaternion 기반 회전**:
+**Euler 각도 기반 회전**:
 
-- `setFromUnitVectors()`: 방향 벡터 기반 회전 계산
-- `slerp()`: 구면 선형 보간으로 부드러운 전환
+- `Math.atan2()`: pitch, yaw 계산
+- `setFromAxisAngle()`: 팔꿈치 굽힘 계산
 - Base Offset: 모델별 초기 회전값 보정
+- NaN 안전성: 모든 계산에 `isFinite()` 체크
 
 **FPS 제한 & 최적화**:
 
 - 30 FPS 제한으로 안정적인 성능
 - `requestAnimationFrame` 기반 렌더링 루프
-- 신뢰도 필터링 (minConfidence: 0.3)
+- 신뢰도 필터링 (minConfidence: 0.25)
 
 ### 🔧 사용 방법
 
@@ -413,21 +414,22 @@ http://localhost:3000/body-tracking-test
 | ------------------- | ------------------ | ---------------------- |
 | **정확도**          | 높음 (33 랜드마크) | 중간 (17 랜드마크)     |
 | **속도**            | 빠름 (WebGL)       | 매우 빠름 (WASM/WebGL) |
-| **깊이 정보**       | 상대적 z값         | 상대적 z값             |
-| **모델 크기**       | 중간 (~10MB)       | 작음 (~4MB)            |
-| **브라우저 호환성** | Chrome 우수        | 모든 브라우저 양호     |
+| **깊이 정보**       | 상대적 z값         | 없음 (Y 기반 근사)     |
+| **모델 크기**       | 중간 (~10MB)       | 매우 작음 (~2MB)       |
+| **브라우저 호환성** | Chrome 우수        | 모든 브라우저 우수     |
 | **CPU 사용률**      | 중간               | 낮음                   |
+| **안정성**          | 보통               | 우수 (Webpack 호환)    |
 
 ### 🎨 구현 구조
 
 ```
 useBodyTracking (훅)
     ↓
-MoveNet Detector
+MoveNet Detector (Lightning)
     ↓
 Keypoint 추출 (17개)
     ↓
-2D → Pseudo-3D 변환
+2D → Pseudo-3D 변환 (Y 기반)
     ↓
 EMA 스무딩
     ↓
@@ -435,7 +437,7 @@ bodyState 반환
     ↓
 VRMBodyController (컴포넌트)
     ↓
-Quaternion 회전 계산
+Euler 각도 → Quaternion 회전 계산
     ↓
 Base Offset 적용
     ↓

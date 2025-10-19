@@ -53,6 +53,7 @@ export function VRMBodyController({
 
   const [isVRMLoaded, setIsVRMLoaded] = useState(false);
   const baseOffsetsRef = useRef<BoneBaseOffsets | null>(null);
+  const logCounterRef = useRef(0);
 
   // useBodyTracking 훅
   const {
@@ -60,17 +61,38 @@ export function VRMBodyController({
     isBodyTrackingReady,
     startBodyTracking,
     stopBodyTracking,
-    keypoints,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    keypoints: _keypoints, // 디버깅용으로 사용하지 않음
+    error,
   } = useBodyTracking(videoRef, trackingOptions);
+
+  // 에러 로깅
+  useEffect(() => {
+    if (error) {
+      console.error('[VRMBodyController] useBodyTracking 에러:', error);
+    }
+  }, [error]);
 
   // 트래킹 활성화/비활성화
   useEffect(() => {
+    console.log('[VRMBodyController] 트래킹 상태 변경:', {
+      isTrackingActive,
+      isBodyTrackingReady,
+      hasVideoRef: !!videoRef.current,
+    });
+
     if (isTrackingActive) {
       startBodyTracking();
     } else {
       stopBodyTracking();
     }
-  }, [isTrackingActive, startBodyTracking, stopBodyTracking]);
+  }, [
+    isTrackingActive,
+    isBodyTrackingReady,
+    startBodyTracking,
+    stopBodyTracking,
+    videoRef,
+  ]);
 
   /**
    * Three.js 씬 초기화
@@ -208,6 +230,7 @@ export function VRMBodyController({
           head &&
           neck
         ) {
+          // 기본 포즈 저장 및 초기화
           baseOffsetsRef.current = {
             leftUpperArm: leftUpperArm.quaternion.clone(),
             rightUpperArm: rightUpperArm.quaternion.clone(),
@@ -218,6 +241,12 @@ export function VRMBodyController({
             head: head.quaternion.clone(),
             neck: neck.quaternion.clone(),
           };
+
+          console.log('[VRMBodyController] 기본 본 오프셋 저장 완료');
+        } else {
+          console.warn(
+            '[VRMBodyController] 일부 본을 찾을 수 없어 기본 오프셋을 저장하지 못했습니다.'
+          );
         }
 
         setIsVRMLoaded(true);
@@ -250,22 +279,28 @@ export function VRMBodyController({
       ) => {
         const bone = vrm.humanoid.getNormalizedBoneNode(boneName);
         if (bone) {
-          // 기본 오프셋을 적용하여 최종 목표 회전 계산
-          const finalTargetRotation = targetQuaternion
-            .clone()
-            .multiply(baseOffset);
+          // baseOffset에 targetQuaternion을 상대적으로 적용
+          const finalRotation = baseOffset.clone().multiply(targetQuaternion);
+
+          // 디버깅: 100프레임마다 로그 출력
+          if (
+            logCounterRef.current === 0 &&
+            boneName === VRMHumanBoneName.LeftUpperArm
+          ) {
+            console.log('[VRMBodyController] 회전 적용:', {
+              boneName,
+              targetQuat: targetQuaternion,
+              baseOffset,
+              finalRotation,
+            });
+          }
+
           // Slerp 보간으로 부드럽게 회전 적용
-          bone.quaternion.slerp(finalTargetRotation, slerpAmount);
+          bone.quaternion.slerp(finalRotation, slerpAmount);
         }
       };
 
-      // 척추 및 가슴
-      applyRotation(VRMHumanBoneName.Spine, state.spine, baseOffsets.spine);
-      applyRotation(VRMHumanBoneName.Chest, state.chest, baseOffsets.chest);
-      applyRotation(VRMHumanBoneName.Head, state.head, baseOffsets.head);
-      applyRotation(VRMHumanBoneName.Neck, state.neck, baseOffsets.neck);
-
-      // 팔
+      // 팔만 적용 (가장 안정적)
       applyRotation(
         VRMHumanBoneName.LeftUpperArm,
         state.leftUpperArm,
@@ -287,20 +322,79 @@ export function VRMBodyController({
         baseOffsets.rightLowerArm
       );
 
-      // 어깨는 MoveNet에서 직접 제공하지 않으므로, 상완 회전에 포함되도록 처리
-      // 또는 상위 본(가슴)의 회전으로 간접적으로 영향
+      logCounterRef.current = (logCounterRef.current + 1) % 100;
     },
     [trackingOptions?.slerpAmount]
   );
 
   /**
-   * bodyState 변경 시 VRM에 적용
+   * 트래킹 비활성화 시 VRM을 기본 포즈로 리셋
    */
   useEffect(() => {
-    if (isVRMLoaded && bodyState) {
+    if (
+      !isTrackingActive &&
+      isVRMLoaded &&
+      vrmRef.current &&
+      baseOffsetsRef.current
+    ) {
+      const vrm = vrmRef.current;
+      const baseOffsets = baseOffsetsRef.current;
+
+      // 모든 본을 기본 포즈로 리셋
+      const resetBone = (
+        boneName: VRMHumanBoneName,
+        baseOffset: THREE.Quaternion
+      ) => {
+        const bone = vrm.humanoid.getNormalizedBoneNode(boneName);
+        if (bone) {
+          bone.quaternion.copy(baseOffset);
+        }
+      };
+
+      resetBone(VRMHumanBoneName.LeftUpperArm, baseOffsets.leftUpperArm);
+      resetBone(VRMHumanBoneName.RightUpperArm, baseOffsets.rightUpperArm);
+      resetBone(VRMHumanBoneName.LeftLowerArm, baseOffsets.leftLowerArm);
+      resetBone(VRMHumanBoneName.RightLowerArm, baseOffsets.rightLowerArm);
+      resetBone(VRMHumanBoneName.Spine, baseOffsets.spine);
+      resetBone(VRMHumanBoneName.Chest, baseOffsets.chest);
+      resetBone(VRMHumanBoneName.Head, baseOffsets.head);
+      resetBone(VRMHumanBoneName.Neck, baseOffsets.neck);
+
+      console.log('[VRMBodyController] VRM 기본 포즈로 리셋');
+    }
+  }, [isTrackingActive, isVRMLoaded]);
+
+  /**
+   * bodyState 변경 시 VRM에 적용
+   * 트래킹이 활성화되었을 때만 적용
+   */
+  useEffect(() => {
+    // 디버깅: 상태 확인 (0.2% 확률 - 드물게)
+    if (Math.random() < 0.002) {
+      console.log('[VRMBodyController] bodyState 업데이트 확인:', {
+        isVRMLoaded,
+        hasBodyState: !!bodyState,
+        isTrackingActive,
+        isBodyTrackingReady,
+        bodyState: bodyState
+          ? {
+              leftUpperArm: bodyState.leftUpperArm,
+              rightUpperArm: bodyState.rightUpperArm,
+            }
+          : null,
+      });
+    }
+
+    if (isVRMLoaded && bodyState && isTrackingActive) {
       applyBodyStateToVRM(bodyState);
     }
-  }, [bodyState, isVRMLoaded, applyBodyStateToVRM]);
+  }, [
+    bodyState,
+    isVRMLoaded,
+    isTrackingActive,
+    isBodyTrackingReady,
+    applyBodyStateToVRM,
+  ]);
 
   return (
     <div className="relative w-full h-full bg-gray-900">
@@ -323,10 +417,24 @@ export function VRMBodyController({
         </div>
       )}
 
-      {/* 트래킹 상태 표시 (키포인트는 디버그용으로 숨김) */}
+      {/* 트래킹 상태 표시 */}
       {isVRMLoaded && isBodyTrackingReady && (
-        <div className="absolute top-2 right-2 p-2 bg-green-600 bg-opacity-80 text-white text-xs rounded">
-          ✓ 트래킹 활성화
+        <div className="absolute top-2 right-2 p-2 bg-green-600 bg-opacity-80 text-white text-xs rounded space-y-1">
+          <div>✓ MoveNet 준비됨</div>
+          {isTrackingActive && (
+            <div className="text-yellow-300">🔴 트래킹 중</div>
+          )}
+          {!isTrackingActive && <div className="text-gray-300">⏸ 대기 중</div>}
+          {bodyState && (
+            <div className="text-green-200 text-[10px]">📊 데이터 수신 중</div>
+          )}
+        </div>
+      )}
+
+      {/* 에러 표시 */}
+      {error && (
+        <div className="absolute bottom-2 right-2 p-2 bg-red-600 bg-opacity-90 text-white text-xs rounded max-w-xs">
+          ⚠️ {error}
         </div>
       )}
     </div>

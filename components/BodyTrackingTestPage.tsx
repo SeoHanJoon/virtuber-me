@@ -1,5 +1,5 @@
 /**
- * MoveNet 기반 VRM 상체 트래킹 테스트 페이지 컴포넌트
+ * BlazePose 기반 VRM 상체 트래킹 테스트 페이지 컴포넌트
  */
 
 'use client';
@@ -22,17 +22,25 @@ export default function BodyTrackingTestPage() {
     const video = videoRef.current;
 
     const setupWebcam = async () => {
-      if (!video) return;
+      if (!video) {
+        console.warn('[BodyTrackingTestPage] videoRef.current가 없습니다');
+        return;
+      }
 
       try {
+        console.log('[BodyTrackingTestPage] 웹캠 권한 요청 중...');
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
+          video: { width: 640, height: 480 },
         });
         video.srcObject = stream;
         await video.play();
         setIsWebcamReady(true);
         setWebcamError(null);
-        console.log('[BodyTrackingTestPage] 웹캠 스트림 시작');
+        console.log('[BodyTrackingTestPage] ✅ 웹캠 스트림 시작:', {
+          videoWidth: video.videoWidth,
+          videoHeight: video.videoHeight,
+          readyState: video.readyState,
+        });
       } catch (err) {
         console.error('[BodyTrackingTestPage] 웹캠 접근 오류:', err);
         setWebcamError('웹캠 접근 오류: ' + (err as Error).message);
@@ -58,13 +66,21 @@ export default function BodyTrackingTestPage() {
   };
 
   const toggleTracking = () => {
+    console.log('[BodyTrackingTestPage] 트래킹 토글:', {
+      current: isTrackingActive,
+      next: !isTrackingActive,
+      hasVideo: !!videoRef.current,
+      videoReady: videoRef.current?.readyState,
+      videoWidth: videoRef.current?.videoWidth,
+      videoHeight: videoRef.current?.videoHeight,
+    });
     setIsTrackingActive((prev) => !prev);
   };
 
   return (
     <div className="flex flex-col h-screen bg-gray-900 text-white p-4">
       <h1 className="text-3xl font-bold mb-4 text-center">
-        MoveNet 기반 VRM 상체 트래킹 테스트 (Webpack 모드)
+        MoveNet 기반 VRM 상체 트래킹 테스트 (안정적, 빠름)
       </h1>
 
       <div className="flex flex-grow gap-4">

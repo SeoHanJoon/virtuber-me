@@ -58,7 +58,7 @@ export default function Home() {
                 MoveNet 상체 트래킹
               </h2>
               <p className="text-gray-700 dark:text-gray-300 mb-4">
-                MoveNet 상체 트래킹 체험
+                가볍고 안정적인 MoveNet 상체 트래킹 체험
               </p>
               <div className="text-green-600 dark:text-green-400 font-medium group-hover:translate-x-2 transition-transform inline-block">
                 체험하기 →

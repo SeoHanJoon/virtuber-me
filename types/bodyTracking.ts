@@ -3,12 +3,13 @@ import * as THREE from 'three';
 /**
  * MoveNet 키포인트 (17개)
  * x, y: 0~1 정규화된 좌표
+ * z: 깊이 정보 (Y 기반 근사값, MoveNet은 z를 제공하지 않음)
  * score: 신뢰도 (0~1)
  */
 export interface Keypoint {
   x: number;
   y: number;
-  z?: number; // Pseudo-3D z (깊이)
+  z?: number; // Pseudo-3D z (Y 기반 근사)
   score?: number;
   name?: string;
 }
