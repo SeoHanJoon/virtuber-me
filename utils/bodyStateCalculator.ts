@@ -195,7 +195,7 @@ export class BodyStateCalculator {
 
     // 정규화
     const ndx = dx / length;
-    const ndy = dy / length;
+    const _ndy = dy / length; // eslint-disable-line @typescript-eslint/no-unused-vars
     const ndz = dz / length;
 
     // 정상 자세: (0, 1, 0) - 엉덩이→어깨가 위쪽 방향

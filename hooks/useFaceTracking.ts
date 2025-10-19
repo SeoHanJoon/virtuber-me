@@ -141,6 +141,7 @@ export function useFaceTracking(): UseFaceTrackingReturn {
       console.error('[Face Tracking] 웹캠 접근 오류:', err);
       setError('웹캠 접근 실패. HTTPS 환경에서 실행해주세요.');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**

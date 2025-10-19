@@ -7,7 +7,8 @@
 - **VRM 모델 뷰어**: 3D 아바타 확인 및 탐색
 - **실시간 얼굴 추적**: 웹캠으로 아바타 실시간 조종 (정밀 표정 인식 🎯)
 - **상체 및 손 추적**: MediaPipe Pose/Hand로 상체 움직임 및 손가락 제스처 추적 🙆✋
-- **VRM 수동 제어**: 슬라이더로 각 본(Bone) 회전을 직접 조절 🎮🆕
+- **MoveNet 상체 트래킹**: TensorFlow.js 기반 단안 카메라 3D 상체 추적 🆕🎯
+- **VRM 수동 제어**: 슬라이더로 각 본(Bone) 회전을 직접 조절 🎮
 - **멀티플레이어 월드**: 최대 100명이 동시 접속 가능한 VRM 아바타 월드 🎉
 - **고급 얼굴 분석**: 입 모양, 눈 깜빡임, 시선, 미소 감지 (468+ 랜드마크)
 - **ARKit BlendShapes 지원**: MediaPipe의 52개 BlendShapes로 미세한 표정 제어 🆕
@@ -16,11 +17,22 @@
 ## 📦 기술 스택
 
 - **Frontend**: Next.js 15 + TypeScript + Tailwind CSS 4
+- **빌드 시스템**: Webpack (TensorFlow.js 호환성을 위해 Turbopack 비활성화) ⚠️
 - **3D 렌더링**: Three.js + @pixiv/three-vrm
-- **추적**: MediaPipe Face/Pose/Hand Landmarker
+- **추적**:
+  - MediaPipe Face/Pose/Hand Landmarker
+  - TensorFlow.js + MoveNet (단안 카메라 3D 추적) 🆕
 - **멀티플레이어**: Socket.IO + Express
 - **코드 품질**: ESLint + Prettier + Husky
 - **Node.js**: 22.20.0
+
+### ⚠️ 중요: Webpack 모드 사용
+
+Next.js 15.5.4의 기본 빌드 시스템인 Turbopack은 `@mediapipe/pose`와 `@tensorflow-models/pose-detection`의 ESM export를 올바르게 해석하지 못합니다. 이 문제를 해결하기 위해 프로젝트는 **Webpack 모드**로 전환되었습니다.
+
+- `package.json`의 `dev`와 `build` 스크립트에서 `--turbopack` 플래그가 제거되었습니다
+- `next.config.ts`에 TensorFlow.js와 MediaPipe를 위한 Webpack 설정이 추가되었습니다
+- 모든 TensorFlow.js 관련 코드는 `dynamic import`와 `'use client'`로 클라이언트 사이드 전용으로 처리됩니다
 
 ## 📁 프로젝트 구조
 
@@ -30,37 +42,42 @@ virtuber-me/
 │ ├── page.tsx # 메인 페이지
 │ ├── vrm/ # VRM 뷰어
 │ ├── face-tracking/ # 얼굴 추적
+│ ├── body-tracking-test/ # MoveNet 상체 추적 테스트 🆕
 │ ├── multiplayer/ # 멀티플레이어 월드 ✨
 │ └── api/vrm-models/ # VRM 파일 목록 API
 ├── components/
 │ ├── VRMViewer.tsx # VRM 뷰어 컴포넌트
-│ ├── FaceTrackingVRMViewer.tsx # 얼굴 추적 메인 컴포넌트 (리팩토링됨 🆕)
-│ ├── MultiplayerVRMWorld.tsx # 멀티플레이어 컴포넌트 ✨
-│ ├── TrackingStatusIndicator.tsx # 추적 상태 표시 UI 🆕
-│ ├── ExpressionSettingsPanel.tsx # 통합 설정 패널 (모델 변형, 추적, 표정, BlendShapes) 🔄
-│ ├── VRMManualControl.tsx # VRM 수동 제어 패널 (슬라이더) 🎮🆕
-│ └── LandmarkVisualizer.tsx # 랜드마크 시각화 🆕
+│ ├── FaceTrackingVRMViewer.tsx # 얼굴 추적 메인 컴포넌트 (리팩토링됨)
+│ ├── VRMBodyController.tsx # MoveNet 상체 제어 🆕
+│ ├── MultiplayerVRMWorld.tsx # 멀티플레이어 컴포넌트
+│ ├── TrackingStatusIndicator.tsx # 추적 상태 표시 UI
+│ ├── ExpressionSettingsPanel.tsx # 통합 설정 패널
+│ ├── VRMManualControl.tsx # VRM 수동 제어 패널 (슬라이더) 🎮
+│ └── LandmarkVisualizer.tsx # 랜드마크 시각화
 ├── hooks/
-│ ├── useWebcam.ts # 웹캠 관리 훅 🆕
-│ ├── useMediaPipeLandmarkers.ts # MediaPipe 초기화 훅 🆕
-│ ├── useVRMScene.ts # Three.js Scene 관리 훅 🆕
-│ ├── useFaceTracking.ts # 얼굴 추적 훅 ✨
-│ ├── useExpressionMapping.ts # 표정 매핑 훅 ✨
-│ ├── useNetworkSync.ts # 네트워크 동기화 훅 ✨
-│ └── useControls.ts # WASD 컨트롤 훅 ✨
+│ ├── useWebcam.ts # 웹캠 관리 훅
+│ ├── useMediaPipeLandmarkers.ts # MediaPipe 초기화 훅
+│ ├── useVRMScene.ts # Three.js Scene 관리 훅
+│ ├── useBodyTracking.ts # MoveNet 상체 추적 훅 🆕
+│ ├── useFaceTracking.ts # 얼굴 추적 훅
+│ ├── useExpressionMapping.ts # 표정 매핑 훅
+│ ├── useNetworkSync.ts # 네트워크 동기화 훅
+│ └── useControls.ts # WASD 컨트롤 훅
 ├── utils/
 │ ├── faceStateCalculator.ts # 정밀 얼굴 상태 계산기 🎯
 │ ├── bodyStateCalculator.ts # 상체 및 손 추적 계산기 🙆✋
-│ ├── mediapipeBlendShapes.ts # MediaPipe BlendShapes 매핑 🆕
-│ ├── vrmTracking.ts # VRM 추적 적용 함수 🆕
-│ ├── vrmTransforms.ts # VRM 변형 유틸 🆕
+│ ├── quaternionHelper.ts # Quaternion 회전 유틸 🆕
+│ ├── mediapipeBlendShapes.ts # MediaPipe BlendShapes 매핑
+│ ├── vrmTracking.ts # VRM 추적 적용 함수
+│ ├── vrmTransforms.ts # VRM 변형 유틸
 │ └── README.md # 상세 사용법 문서
 ├── types/
 │ ├── vrm.ts # VRM 타입 정의
+│ ├── bodyTracking.ts # MoveNet 상체 추적 타입 🆕
 │ ├── multiplayer.ts # 멀티플레이어 타입 정의
 │ ├── tracking.ts # 추적 타입 정의
 │ └── components.ts # 컴포넌트 Props 타입
-├── server/ # 멀티플레이어 서버 ✨
+├── server/ # 멀티플레이어 서버
 │ ├── index.ts # Socket.IO 서버
 │ ├── types.ts # 타입 정의
 │ └── package.json # 서버 의존성
@@ -332,6 +349,101 @@ mood: "happy" // 감정 상태
 - **브로드캐스트 최적화**: 변경된 데이터만 전송
 - **자동 정리**: 5분 이상 비활성 세션 자동 제거
 
+## 🎯 MoveNet 기반 상체 트래킹 🆕
+
+### 🌟 주요 특징
+
+**Pseudo-3D 좌표 변환**:
+
+- 단안 카메라의 2D 좌표를 y 기반 깊이 근사치로 변환
+- 깊이(z) = `-(y - 0.5) * depthScale`
+- 중심 정규화: `(0.5, 0.5)` → `(0, 0)`
+
+**EMA 스무딩**:
+
+- 지수 이동 평균으로 떨림 감소
+- 부드러운 움직임 보장
+- 설정 가능한 smoothingFactor (0~1)
+
+**Quaternion 기반 회전**:
+
+- `setFromUnitVectors()`: 방향 벡터 기반 회전 계산
+- `slerp()`: 구면 선형 보간으로 부드러운 전환
+- Base Offset: 모델별 초기 회전값 보정
+
+**FPS 제한 & 최적화**:
+
+- 30 FPS 제한으로 안정적인 성능
+- `requestAnimationFrame` 기반 렌더링 루프
+- 신뢰도 필터링 (minConfidence: 0.3)
+
+### 🔧 사용 방법
+
+```bash
+# 1. 개발 모드 실행
+npm run dev
+
+# 2. 테스트 페이지 접속
+http://localhost:3000/body-tracking-test
+
+# 3. 웹캠 권한 허용
+
+# 4. "트래킹 시작" 버튼 클릭
+
+# 5. 팔을 천천히 움직여보세요!
+```
+
+**주의사항**: TensorFlow.js MoveNet은 클라이언트 사이드 전용이므로 `npm run dev`로 개발 모드에서 테스트하세요.
+
+### ⚙️ 설정 옵션
+
+```typescript
+{
+  depthScale: 0.3,        // z축 스케일 (낮을수록 깊이감 적음)
+  smoothingFactor: 0.3,   // EMA 스무딩 (높을수록 부드러움)
+  maxFPS: 30,             // FPS 제한
+  slerpAmount: 0.15,      // Quaternion 보간 강도
+  minConfidence: 0.3      // 최소 신뢰도 임계값
+}
+```
+
+### 📊 기술 비교
+
+| 항목                | MediaPipe Pose     | MoveNet (TF.js)        |
+| ------------------- | ------------------ | ---------------------- |
+| **정확도**          | 높음 (33 랜드마크) | 중간 (17 랜드마크)     |
+| **속도**            | 빠름 (WebGL)       | 매우 빠름 (WASM/WebGL) |
+| **깊이 정보**       | 상대적 z값         | 상대적 z값             |
+| **모델 크기**       | 중간 (~10MB)       | 작음 (~4MB)            |
+| **브라우저 호환성** | Chrome 우수        | 모든 브라우저 양호     |
+| **CPU 사용률**      | 중간               | 낮음                   |
+
+### 🎨 구현 구조
+
+```
+useBodyTracking (훅)
+    ↓
+MoveNet Detector
+    ↓
+Keypoint 추출 (17개)
+    ↓
+2D → Pseudo-3D 변환
+    ↓
+EMA 스무딩
+    ↓
+bodyState 반환
+    ↓
+VRMBodyController (컴포넌트)
+    ↓
+Quaternion 회전 계산
+    ↓
+Base Offset 적용
+    ↓
+Slerp 보간
+    ↓
+VRM 본에 적용
+```
+
 ## 🎯 향후 개발 계획
 
 - [ ] 보이스 채팅 (WebRTC)
@@ -340,6 +452,7 @@ mood: "happy" // 감정 상태
 - [ ] 파티클 이펙트
 - [ ] 커스텀 월드 맵
 - [ ] 데이터베이스 연동 (사용자 프로필)
+- [ ] MoveNet + MediaPipe 하이브리드 트래킹 🆕
 
 ## 📄 라이선스
 

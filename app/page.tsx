@@ -51,6 +51,21 @@ export default function Home() {
             </div>
           </Link>
 
+          <Link href="/body-tracking-test">
+            <div className="group cursor-pointer bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 p-8 rounded-2xl hover:shadow-xl transition-all duration-300 border-2 border-green-200 dark:border-green-700 hover:scale-105">
+              <div className="text-5xl mb-4">🏃</div>
+              <h2 className="text-2xl font-bold mb-3 text-green-900 dark:text-green-300">
+                MoveNet 상체 트래킹
+              </h2>
+              <p className="text-gray-700 dark:text-gray-300 mb-4">
+                MoveNet 상체 트래킹 체험
+              </p>
+              <div className="text-green-600 dark:text-green-400 font-medium group-hover:translate-x-2 transition-transform inline-block">
+                체험하기 →
+              </div>
+            </div>
+          </Link>
+
           {/* 멀티플레이어 */}
           <Link href="/multiplayer">
             <div className="group cursor-pointer bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 p-8 rounded-2xl hover:shadow-xl transition-all duration-300 border-2 border-blue-200 dark:border-blue-700 hover:scale-105">

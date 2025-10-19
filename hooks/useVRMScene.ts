@@ -110,6 +110,7 @@ export function useVRMScene({
       }
       renderer.dispose();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvasRef, modelPath, width, height, onError]);
 
   // 변형 상태 변경 시 재적용
