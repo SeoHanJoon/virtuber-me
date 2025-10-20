@@ -1,15 +1,15 @@
 import * as THREE from 'three';
 
 /**
- * MoveNet 키포인트 (17개)
+ * BlazePose 키포인트 (33개)
  * x, y: 0~1 정규화된 좌표
- * z: 깊이 정보 (Y 기반 근사값, MoveNet은 z를 제공하지 않음)
+ * z: 실제 Z 깊이 정보 (BlazePose는 엉덩이 중심 기준 상대 깊이 제공)
  * score: 신뢰도 (0~1)
  */
 export interface Keypoint {
   x: number;
   y: number;
-  z?: number; // Pseudo-3D z (Y 기반 근사)
+  z?: number; // 실제 Z 깊이 (BlazePose는 3D 좌표 제공)
   score?: number;
   name?: string;
 }

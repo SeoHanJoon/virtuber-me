@@ -428,17 +428,17 @@ export function VRMBodyController({
         </div>
       )}
 
-      {/* MoveNet 로딩 상태 */}
+      {/* BlazePose 로딩 상태 */}
       {!isBodyTrackingReady && isVRMLoaded && (
         <div className="absolute top-2 right-2 p-2 bg-blue-600 bg-opacity-80 text-white text-xs rounded">
-          MoveNet 초기화 중...
+          BlazePose 초기화 중... (TFjs lite)
         </div>
       )}
 
       {/* 트래킹 상태 표시 */}
       {isVRMLoaded && isBodyTrackingReady && (
         <div className="absolute top-2 right-2 p-2 bg-green-600 bg-opacity-80 text-white text-xs rounded space-y-1">
-          <div>✓ MoveNet 준비됨</div>
+          <div>✓ BlazePose 준비됨 (33 landmarks + Z, lite)</div>
           {isTrackingActive && (
             <div className="text-yellow-300">🔴 트래킹 중</div>
           )}

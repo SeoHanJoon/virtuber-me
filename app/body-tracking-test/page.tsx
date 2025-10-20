@@ -16,7 +16,7 @@ const BodyTrackingTestPage = dynamic(
       <div className="flex h-screen items-center justify-center bg-gray-900 text-white">
         <div className="text-center">
           <div className="mb-4 h-12 w-12 animate-spin rounded-full border-4 border-white border-t-transparent mx-auto" />
-          <p className="text-lg">MoveNet 모델 로딩 중...</p>
+          <p className="text-lg">BlazePose 모델 로딩 중... (TFjs lite)</p>
         </div>
       </div>
     ),

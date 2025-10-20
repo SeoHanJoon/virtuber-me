@@ -90,29 +90,59 @@ export function useBodyTracking(
           poseDetection = await import('@tensorflow-models/pose-detection');
         }
 
-        // MoveNet 설정 (안정적이고 빠름, MediaPipe 패키지 불필요)
+        // BlazePose 설정 (TFjs 런타임 - Webpack 호환)
+        // 'full' 모델에서 NaN 발생 → 'lite' 모델로 변경
         const detectorConfig = {
-          modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+          runtime: 'tfjs' as const,
+          modelType: 'lite' as const, // full → lite (더 가볍고 안정적)
           enableSmoothing: true,
-          minPoseScore: 0.25,
         };
 
         console.log(
-          '[useBodyTracking] MoveNet 모델 로딩 시작...',
+          '[useBodyTracking] ✅ BlazePose 모델 로딩 시작 (TFjs runtime, lite model)...',
           detectorConfig
         );
 
         const loadedDetector = await poseDetection.createDetector(
-          poseDetection.SupportedModels.MoveNet,
+          poseDetection.SupportedModels.BlazePose,
           detectorConfig
         );
 
+        console.log('[useBodyTracking] ✅ BlazePose detector 객체 생성 완료');
+
+        // 🔥 중요: 더미 이미지로 모델 워밍업 (첫 추론 시 초기화 필요)
+        console.log(
+          '[useBodyTracking] 🔥 모델 워밍업 시작 (null 문제 해결)...'
+        );
+        try {
+          // 640x480 크기의 더미 캔버스 생성
+          const dummyCanvas = document.createElement('canvas');
+          dummyCanvas.width = 640;
+          dummyCanvas.height = 480;
+          const ctx = dummyCanvas.getContext('2d');
+          if (ctx) {
+            // 검은 배경으로 채우기
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, 640, 480);
+          }
+
+          // 더미 프레임으로 첫 추론 실행 (모델 가중치 로드 및 초기화)
+          console.log('[useBodyTracking] 🔥 더미 추론 실행 중...');
+          const warmupResult = await loadedDetector.estimatePoses(dummyCanvas);
+          console.log('[useBodyTracking] ✅ 모델 워밍업 완료! 결과:', {
+            posesLength: warmupResult?.length,
+            firstPoseKeypoints: warmupResult?.[0]?.keypoints?.length,
+          });
+        } catch (warmupErr) {
+          console.warn('[useBodyTracking] ⚠️ 모델 워밍업 실패:', warmupErr);
+        }
+
         setDetector(loadedDetector);
         setIsBodyTrackingReady(true);
-        console.log('[useBodyTracking] ✅ MoveNet 모델 로드 완료');
+        console.log('[useBodyTracking] ✅✅✅ BlazePose 초기화 완료!');
       } catch (err) {
-        console.error('[useBodyTracking] MoveNet 모델 로드 실패:', err);
-        setError('MoveNet 모델 로드 실패: ' + (err as Error).message);
+        console.error('[useBodyTracking] ❌ BlazePose 모델 로드 실패:', err);
+        setError('BlazePose 모델 로드 실패: ' + (err as Error).message);
       }
     };
 
@@ -145,8 +175,29 @@ export function useBodyTracking(
       videoWidth: number,
       videoHeight: number
     ): Keypoint[] => {
-      // 디버깅: 원본 키포인트 확인 (0.2% 확률 - 매우 드물게)
-      const shouldLog = Math.random() < 0.002;
+      // 디버깅: 원본 키포인트 확인 (5% 확률 - NaN 문제 해결 후 빈도 감소)
+      const shouldLog = Math.random() < 0.05;
+
+      // 🔍 첫 3개 키포인트의 원본 데이터 타입과 값 확인
+      if (shouldLog) {
+        console.log('[useBodyTracking] 🔍 원본 키포인트 샘플 (처음 3개):', {
+          videoSize: { width: videoWidth, height: videoHeight },
+          totalKeypoints: rawKeypoints.length,
+          sample: rawKeypoints.slice(0, 3).map((kp, i) => ({
+            index: i,
+            name: kp.name,
+            x: kp.x,
+            y: kp.y,
+            z: (kp as { z?: number }).z,
+            score: kp.score,
+            xType: typeof kp.x,
+            yType: typeof kp.y,
+            isXNaN: Number.isNaN(kp.x),
+            isYNaN: Number.isNaN(kp.y),
+          })),
+        });
+      }
+
       if (shouldLog) {
         const leftShoulder = rawKeypoints.find(
           (kp) => kp.name === 'left_shoulder'
@@ -171,56 +222,97 @@ export function useBodyTracking(
         });
       }
 
-      // MoveNet COCO 키포인트 이름 매핑
-      const MOVENET_KEYPOINT_NAMES = [
+      // BlazePose COCO 키포인트 이름 매핑 (33개)
+      const BLAZEPOSE_KEYPOINT_NAMES = [
         'nose',
+        'left_eye_inner',
         'left_eye',
+        'left_eye_outer',
+        'right_eye_inner',
         'right_eye',
+        'right_eye_outer',
         'left_ear',
         'right_ear',
+        'mouth_left',
+        'mouth_right',
         'left_shoulder',
         'right_shoulder',
         'left_elbow',
         'right_elbow',
         'left_wrist',
         'right_wrist',
+        'left_pinky',
+        'right_pinky',
+        'left_index',
+        'right_index',
+        'left_thumb',
+        'right_thumb',
         'left_hip',
         'right_hip',
         'left_knee',
         'right_knee',
         'left_ankle',
         'right_ankle',
+        'left_heel',
+        'right_heel',
+        'left_foot_index',
+        'right_foot_index',
       ];
 
       const processed: Keypoint[] = [];
       const newSmoothedKeypoints = new Map<string, THREE.Vector3>();
 
       rawKeypoints.forEach((kp, index) => {
-        // MoveNet은 name이 없으므로 인덱스로 이름 할당
+        // BlazePose는 name이 없을 수 있으므로 인덱스로 이름 할당
         const keypointName =
-          kp.name || MOVENET_KEYPOINT_NAMES[index] || `keypoint_${index}`;
+          kp.name || BLAZEPOSE_KEYPOINT_NAMES[index] || `keypoint_${index}`;
 
         if (kp.score === undefined || kp.score < minConfidence) {
           return;
         }
 
-        // MoveNet은 픽셀 좌표를 반환하므로 먼저 0~1로 정규화
-        const normalizedX_0to1 = kp.x / videoWidth;
-        const normalizedY_0to1 = kp.y / videoHeight;
+        // 🔍 NaN 디버깅: 원본 값 확인 (첫 3개만, 5% 확률)
+        if (index < 3 && shouldLog) {
+          console.log(
+            `[useBodyTracking] 🔍 키포인트 #${index} (${keypointName}) 처리 전:`,
+            {
+              rawX: kp.x,
+              rawY: kp.y,
+              rawZ: (kp as { z?: number }).z,
+              score: kp.score,
+            }
+          );
+        }
 
+        // BlazePose는 이미 0~1 범위로 정규화된 좌표를 반환 (픽셀이 아님!)
         // 중심을 (0,0)으로 이동: 0~1 → -0.5~0.5
         // Y축은 Three.js와 일치하도록 반전 (위가 양수)
-        const normalizedX = normalizedX_0to1 - 0.5;
-        const normalizedY = 0.5 - normalizedY_0to1; // Y축 반전
+        const normalizedX = kp.x - 0.5;
+        const normalizedY = 0.5 - kp.y; // Y축 반전
 
-        // Z축: MoveNet은 z값을 제공하지 않으므로 Y 기반 근사값 사용
+        // Z축: BlazePose는 실제 z값을 제공 (엉덩이 중심 기준 상대 깊이)
         let normalizedZ: number;
         if (kp.z !== undefined) {
-          // z값이 있으면 그대로 사용
+          // BlazePose의 z값은 이미 정규화되어 있음
           normalizedZ = -kp.z * depthScale;
         } else {
-          // MoveNet Fallback: Y 기반 깊이 근사 (위로 갈수록 앞에 있다고 가정)
-          normalizedZ = -(normalizedY_0to1 - 0.5) * depthScale;
+          // Fallback: Y 기반 깊이 근사 (위로 갈수록 앞에 있다고 가정)
+          normalizedZ = -(kp.y - 0.5) * depthScale;
+        }
+
+        // 🔍 NaN 디버깅: 정규화 후 값 확인 (첫 3개만, 5% 확률)
+        if (index < 3 && shouldLog) {
+          console.log(
+            `[useBodyTracking] 🔍 키포인트 #${index} (${keypointName}) 정규화 후:`,
+            {
+              normalizedX,
+              normalizedY,
+              normalizedZ,
+              isXNaN: Number.isNaN(normalizedX),
+              isYNaN: Number.isNaN(normalizedY),
+              isZNaN: Number.isNaN(normalizedZ),
+            }
+          );
         }
 
         const currentPoint = new THREE.Vector3(
@@ -237,13 +329,30 @@ export function useBodyTracking(
 
         newSmoothedKeypoints.set(keypointName, smoothedPoint);
 
-        processed.push({
+        const finalKeypoint = {
           x: smoothedPoint.x,
           y: smoothedPoint.y,
           z: smoothedPoint.z,
           score: kp.score,
           name: keypointName, // 매핑된 이름 사용
-        });
+        };
+
+        // 🔍 NaN 디버깅: 최종 출력 확인 (첫 3개만, 5% 확률)
+        if (index < 3 && shouldLog) {
+          console.log(
+            `[useBodyTracking] 🔍 키포인트 #${index} (${keypointName}) 최종 출력:`,
+            {
+              x: finalKeypoint.x,
+              y: finalKeypoint.y,
+              z: finalKeypoint.z,
+              isXNaN: Number.isNaN(finalKeypoint.x),
+              isYNaN: Number.isNaN(finalKeypoint.y),
+              isZNaN: Number.isNaN(finalKeypoint.z),
+            }
+          );
+        }
+
+        processed.push(finalKeypoint);
       });
 
       smoothedKeypoints.current = newSmoothedKeypoints;
@@ -282,15 +391,15 @@ export function useBodyTracking(
 
   /**
    * 키포인트를 기반으로 VRM 본 회전 계산
-   * MoveNet은 name 속성이 없으므로 인덱스로 접근
-   * COCO format:
-   * 0: nose, 5: left_shoulder, 6: right_shoulder,
-   * 7: left_elbow, 8: right_elbow, 9: left_wrist, 10: right_wrist,
-   * 11: left_hip, 12: right_hip
+   * BlazePose는 name 속성이 없을 수 있으므로 인덱스로 접근
+   * BlazePose format (33 landmarks):
+   * 0: nose, 11: left_shoulder, 12: right_shoulder,
+   * 13: left_elbow, 14: right_elbow, 15: left_wrist, 16: right_wrist,
+   * 23: left_hip, 24: right_hip
    */
   const calculateBodyRotations = useCallback(
     (kps: Keypoint[]): BodyTrackingState | null => {
-      // MoveNet은 name 속성이 없으므로 인덱스로 접근
+      // BlazePose는 name 속성이 없을 수 있으므로 인덱스로 접근
       // 먼저 name으로 시도하고, 실패하면 인덱스로 접근
       const getKeypoint = (name: string, index: number) => {
         const byName = kps.find((kp) => kp.name === name);
@@ -300,14 +409,14 @@ export function useBodyTracking(
       };
 
       const nose = getKeypoint('nose', 0);
-      const leftShoulder = getKeypoint('left_shoulder', 5);
-      const rightShoulder = getKeypoint('right_shoulder', 6);
-      const leftElbow = getKeypoint('left_elbow', 7);
-      const rightElbow = getKeypoint('right_elbow', 8);
-      const leftWrist = getKeypoint('left_wrist', 9);
-      const rightWrist = getKeypoint('right_wrist', 10);
-      const leftHip = getKeypoint('left_hip', 11);
-      const rightHip = getKeypoint('right_hip', 12);
+      const leftShoulder = getKeypoint('left_shoulder', 11);
+      const rightShoulder = getKeypoint('right_shoulder', 12);
+      const leftElbow = getKeypoint('left_elbow', 13);
+      const rightElbow = getKeypoint('right_elbow', 14);
+      const leftWrist = getKeypoint('left_wrist', 15);
+      const rightWrist = getKeypoint('right_wrist', 16);
+      const leftHip = getKeypoint('left_hip', 23);
+      const rightHip = getKeypoint('right_hip', 24);
 
       // 디버깅: 키포인트 접근 방식 확인 (0.5% 확률 - 드물게 출력)
       if (Math.random() < 0.005) {
@@ -612,9 +721,9 @@ export function useBodyTracking(
           return;
         }
 
-        // 비디오 정보 확인 (항상 출력 - 디버깅용)
-        if (Math.random() < 0.1) {
-          console.log('[useBodyTracking] estimatePoses 호출 전:', {
+        // 비디오 정보 확인 (5% 확률 - NaN 문제 해결 후 빈도 감소)
+        if (Math.random() < 0.05) {
+          console.log('[useBodyTracking] 🎥 estimatePoses 호출 전:', {
             videoElement: !!video,
             videoWidth: video.videoWidth,
             videoHeight: video.videoHeight,
@@ -626,8 +735,73 @@ export function useBodyTracking(
 
         const poses = await detector.estimatePoses(video);
 
-        // 포즈 추정 결과 확인 (0.5% 확률 - 드물게 출력)
-        if (Math.random() < 0.005) {
+        // 🔍 NaN 디버깅: poses 원본 반환값 상세 확인 (100% - NaN 문제 해결까지)
+        console.log('[useBodyTracking] 🔍🔍🔍 estimatePoses 원본 반환값:', {
+          posesType: typeof poses,
+          posesIsArray: Array.isArray(poses),
+          posesLength: poses?.length,
+          hasPoses: !!poses && poses.length > 0,
+        });
+
+        if (poses && poses.length > 0) {
+          const firstPose = poses[0];
+          console.log(
+            '[useBodyTracking] 🔍🔍 포즈 객체:',
+            JSON.stringify(poses)
+          );
+          console.log('[useBodyTracking] 🔍🔍🔍 첫 번째 포즈 구조:', {
+            hasKeypoints: !!firstPose.keypoints,
+            keypointsType: typeof firstPose.keypoints,
+            keypointsIsArray: Array.isArray(firstPose.keypoints),
+            keypointsLength: firstPose.keypoints?.length,
+          });
+
+          if (firstPose.keypoints && firstPose.keypoints.length > 0) {
+            // 첫 3개 키포인트의 원본 값 확인
+            const first3Keypoints = firstPose.keypoints.slice(0, 3);
+            console.log(
+              '[useBodyTracking] 🔍🔍🔍 첫 3개 키포인트 원본 값:',
+              first3Keypoints.map((kp, i) => {
+                const kpWithZ = kp as {
+                  x: number;
+                  y: number;
+                  z?: number;
+                  score?: number;
+                  name?: string;
+                };
+                return {
+                  index: i,
+                  x: kp.x,
+                  y: kp.y,
+                  z: kpWithZ.z,
+                  score: kp.score,
+                  name: kp.name,
+                  xType: typeof kp.x,
+                  yType: typeof kp.y,
+                  zType: typeof kpWithZ.z,
+                  scoreType: typeof kp.score,
+                  isXNumber: typeof kp.x === 'number',
+                  isYNumber: typeof kp.y === 'number',
+                  isXNaN: typeof kp.x === 'number' && Number.isNaN(kp.x),
+                  isYNaN: typeof kp.y === 'number' && Number.isNaN(kp.y),
+                  isZNaN:
+                    typeof kpWithZ.z === 'number' && Number.isNaN(kpWithZ.z),
+                  isScoreNaN:
+                    typeof kp.score === 'number' && Number.isNaN(kp.score),
+                };
+              })
+            );
+          } else {
+            console.warn(
+              '[useBodyTracking] ⚠️ keypoints 배열이 비어있거나 존재하지 않음'
+            );
+          }
+        } else {
+          console.warn('[useBodyTracking] ⚠️ poses가 비어있거나 존재하지 않음');
+        }
+
+        // 포즈 추정 결과 확인 (5% 확률 - NaN 문제 해결 후 빈도 감소)
+        if (Math.random() < 0.05) {
           const firstKp = poses?.[0]?.keypoints?.[0];
           const leftShoulderByName = poses?.[0]?.keypoints?.find(
             (kp) => kp.name === 'left_shoulder'
@@ -756,10 +930,10 @@ export function useBodyTracking(
             setBodyState(null);
           }
         } else {
-          // 포즈가 감지되지 않음 (0.1% 확률로만 로그)
-          if (Math.random() < 0.001) {
+          // 포즈가 감지되지 않음 (1% 확률로만 로그 - NaN 문제 해결 후 빈도 감소)
+          if (Math.random() < 0.01) {
             console.warn(
-              '[useBodyTracking] 포즈가 감지되지 않음 (정상적일 수 있음 - 화면에서 벗어남)'
+              '[useBodyTracking] ⚠️ 포즈가 감지되지 않음 (정상적일 수 있음 - 화면에서 벗어남 or 모델 로딩 중)'
             );
           }
           setBodyState(null);
@@ -787,7 +961,7 @@ export function useBodyTracking(
     });
 
     if (!detector) {
-      const errorMsg = 'MoveNet detector가 준비되지 않았습니다.';
+      const errorMsg = 'BlazePose detector가 준비되지 않았습니다.';
       console.error('[useBodyTracking]', errorMsg);
       setError(errorMsg);
       return;
@@ -805,7 +979,9 @@ export function useBodyTracking(
     }
     lastFrameTime.current = performance.now();
     animationFrameId.current = requestAnimationFrame(trackPose);
-    console.log('[useBodyTracking] ✅ MoveNet 바디 트래킹 시작');
+    console.log(
+      '[useBodyTracking] ✅ BlazePose 바디 트래킹 시작 (33 landmarks + Z-depth, TFjs)'
+    );
   }, [detector, trackPose, videoRef]);
 
   const stopBodyTracking = useCallback(() => {

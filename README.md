@@ -7,7 +7,7 @@
 - **VRM 모델 뷰어**: 3D 아바타 확인 및 탐색
 - **실시간 얼굴 추적**: 웹캠으로 아바타 실시간 조종 (정밀 표정 인식 🎯)
 - **상체 및 손 추적**: MediaPipe Pose/Hand로 상체 움직임 및 손가락 제스처 추적 🙆✋
-- **MoveNet 상체 트래킹**: TensorFlow.js 기반 단안 카메라 상체 추적 (안정적, 빠름) 🆕🎯
+- **BlazePose 상체 트래킹**: TFjs lite 모델 기반 안정적인 상체 추적 (33 landmarks + Z-depth) 🆕🎯
 - **VRM 수동 제어**: 슬라이더로 각 본(Bone) 회전을 직접 조절 🎮
 - **멀티플레이어 월드**: 최대 100명이 동시 접속 가능한 VRM 아바타 월드 🎉
 - **고급 얼굴 분석**: 입 모양, 눈 깜빡임, 시선, 미소 감지 (468+ 랜드마크)
@@ -17,11 +17,11 @@
 ## 📦 기술 스택
 
 - **Frontend**: Next.js 15 + TypeScript + Tailwind CSS 4
-- **빌드 시스템**: Webpack (TensorFlow.js 호환성을 위해 Turbopack 비활성화) ⚠️
+- **빌드 시스템**: Webpack (TensorFlow.js + MediaPipe 호환성을 위해 Turbopack 비활성화) ⚠️
 - **3D 렌더링**: Three.js + @pixiv/three-vrm
 - **추적**:
   - MediaPipe Face/Pose/Hand Landmarker
-  - TensorFlow.js + MoveNet (단안 카메라 2D 추적, 안정적) 🆕
+  - TensorFlow.js + BlazePose (TFjs lite runtime, 33 landmarks + Z-depth) 🆕
 - **멀티플레이어**: Socket.IO + Express
 - **코드 품질**: ESLint + Prettier + Husky
 - **Node.js**: 22.20.0
@@ -42,13 +42,13 @@ virtuber-me/
 │ ├── page.tsx # 메인 페이지
 │ ├── vrm/ # VRM 뷰어
 │ ├── face-tracking/ # 얼굴 추적
-│ ├── body-tracking-test/ # MoveNet 상체 추적 테스트 🆕
+│ ├── body-tracking-test/ # BlazePose 상체 추적 테스트 🆕
 │ ├── multiplayer/ # 멀티플레이어 월드 ✨
 │ └── api/vrm-models/ # VRM 파일 목록 API
 ├── components/
 │ ├── VRMViewer.tsx # VRM 뷰어 컴포넌트
 │ ├── FaceTrackingVRMViewer.tsx # 얼굴 추적 메인 컴포넌트 (리팩토링됨)
-│ ├── VRMBodyController.tsx # MoveNet 상체 제어 🆕
+│ ├── VRMBodyController.tsx # BlazePose 상체 제어 🆕
 │ ├── MultiplayerVRMWorld.tsx # 멀티플레이어 컴포넌트
 │ ├── TrackingStatusIndicator.tsx # 추적 상태 표시 UI
 │ ├── ExpressionSettingsPanel.tsx # 통합 설정 패널
@@ -58,7 +58,7 @@ virtuber-me/
 │ ├── useWebcam.ts # 웹캠 관리 훅
 │ ├── useMediaPipeLandmarkers.ts # MediaPipe 초기화 훅
 │ ├── useVRMScene.ts # Three.js Scene 관리 훅
-│ ├── useBodyTracking.ts # MoveNet 상체 추적 훅 🆕
+│ ├── useBodyTracking.ts # BlazePose 상체 추적 훅 🆕
 │ ├── useFaceTracking.ts # 얼굴 추적 훅
 │ ├── useExpressionMapping.ts # 표정 매핑 훅
 │ ├── useNetworkSync.ts # 네트워크 동기화 훅
@@ -73,7 +73,7 @@ virtuber-me/
 │ └── README.md # 상세 사용법 문서
 ├── types/
 │ ├── vrm.ts # VRM 타입 정의
-│ ├── bodyTracking.ts # MoveNet 상체 추적 타입 🆕
+│ ├── bodyTracking.ts # BlazePose 상체 추적 타입 🆕
 │ ├── multiplayer.ts # 멀티플레이어 타입 정의
 │ ├── tracking.ts # 추적 타입 정의
 │ └── components.ts # 컴포넌트 Props 타입

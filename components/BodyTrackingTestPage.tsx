@@ -1,5 +1,8 @@
 /**
- * BlazePose 기반 VRM 상체 트래킹 테스트 페이지 컴포넌트
+ * BlazePose (TFjs lite) 기반 VRM 상체 트래킹 테스트 페이지 컴포넌트
+ * - 33개 키포인트 + 실제 Z-depth 값 제공
+ * - Webpack 호환성을 위해 TFjs lite runtime 사용
+ * - lite 모델: full 모델보다 가볍고 안정적
  */
 
 'use client';
@@ -28,31 +31,120 @@ export default function BodyTrackingTestPage() {
   useEffect(() => {
     // cleanup 함수에서 사용할 video 엘리먼트를 미리 저장
     const video = videoRef.current;
+    let stream: MediaStream | null = null;
 
     const setupWebcam = async () => {
       if (!video) {
-        console.warn('[BodyTrackingTestPage] videoRef.current가 없습니다');
+        console.warn('[BodyTrackingTestPage] ❌ videoRef.current가 없습니다');
         return;
       }
 
+      // DOM에 마운트되었는지 확인
+      if (!document.body.contains(video)) {
+        console.warn(
+          '[BodyTrackingTestPage] ❌ 비디오 엘리먼트가 DOM에 없습니다. 100ms 대기 후 재시도...'
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        if (!video || !document.body.contains(video)) {
+          console.error(
+            '[BodyTrackingTestPage] ❌ 비디오 엘리먼트 DOM 마운트 실패'
+          );
+          setWebcamError('비디오 엘리먼트 초기화 실패');
+          return;
+        }
+      }
+
       try {
-        console.log('[BodyTrackingTestPage] 웹캠 권한 요청 중...');
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 640, height: 480 },
+        console.log('[BodyTrackingTestPage] 📹 웹캠 권한 요청 중...');
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            facingMode: 'user',
+          },
         });
+
+        console.log('[BodyTrackingTestPage] ✅ 웹캠 스트림 획득:', {
+          tracks: stream.getTracks().length,
+          videoTrack: stream.getVideoTracks()[0]?.label,
+        });
+
+        // 이벤트 리스너를 먼저 설정 (srcObject 할당 전에!)
+        const metadataPromise = new Promise<void>((resolve, reject) => {
+          const timeoutId = setTimeout(() => {
+            console.error('[BodyTrackingTestPage] ❌ loadedmetadata 타임아웃');
+            reject(new Error('비디오 메타데이터 로드 타임아웃 (10초)'));
+          }, 10000);
+
+          const onLoadedMetadata = () => {
+            clearTimeout(timeoutId);
+            video.removeEventListener('loadedmetadata', onLoadedMetadata);
+            console.log(
+              '[BodyTrackingTestPage] ✅ loadedmetadata 이벤트 발생:',
+              {
+                videoWidth: video.videoWidth,
+                videoHeight: video.videoHeight,
+                readyState: video.readyState,
+              }
+            );
+            resolve();
+          };
+
+          const onError = (e: Event) => {
+            clearTimeout(timeoutId);
+            video.removeEventListener('error', onError);
+            console.error('[BodyTrackingTestPage] ❌ 비디오 에러 이벤트:', e);
+            reject(new Error('비디오 로드 에러'));
+          };
+
+          video.addEventListener('loadedmetadata', onLoadedMetadata);
+          video.addEventListener('error', onError);
+        });
+
+        // 이제 srcObject 할당
+        console.log('[BodyTrackingTestPage] 🎬 비디오 srcObject 할당 중...');
         video.srcObject = stream;
-        await video.play();
-        setIsWebcamReady(true);
-        setWebcamError(null);
-        console.log('[BodyTrackingTestPage] ✅ 웹캠 스트림 시작:', {
+
+        // 메타데이터 로드 대기
+        await metadataPromise;
+
+        // play() 호출 (autoPlay 속성이 있지만 명시적으로 호출)
+        try {
+          console.log('[BodyTrackingTestPage] ▶️ video.play() 호출 중...');
+          await video.play();
+          console.log('[BodyTrackingTestPage] ✅ 비디오 재생 시작됨');
+        } catch (playErr) {
+          console.warn(
+            '[BodyTrackingTestPage] ⚠️ video.play() 실패 (autoPlay로 재생될 수 있음):',
+            playErr
+          );
+          // autoPlay 속성이 있으므로 실패해도 괜찮음
+        }
+
+        // 최종 상태 확인
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        console.log('[BodyTrackingTestPage] ✅ 웹캠 스트림 시작 완료!', {
           videoWidth: video.videoWidth,
           videoHeight: video.videoHeight,
           readyState: video.readyState,
+          paused: video.paused,
+          currentTime: video.currentTime,
+          duration: video.duration,
         });
+
+        setIsWebcamReady(true);
+        setWebcamError(null);
       } catch (err) {
-        console.error('[BodyTrackingTestPage] 웹캠 접근 오류:', err);
+        console.error('[BodyTrackingTestPage] ❌ 웹캠 초기화 실패:', err);
         setWebcamError('웹캠 접근 오류: ' + (err as Error).message);
         setIsWebcamReady(false);
+
+        // 에러 시 스트림 정리
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop());
+          stream = null;
+        }
       }
     };
 
@@ -64,7 +156,7 @@ export default function BodyTrackingTestPage() {
         (video.srcObject as MediaStream)
           .getTracks()
           .forEach((track) => track.stop());
-        console.log('[BodyTrackingTestPage] 웹캠 스트림 중지');
+        console.log('[BodyTrackingTestPage] 🛑 웹캠 스트림 중지');
       }
     };
   }, []);
@@ -190,27 +282,45 @@ export default function BodyTrackingTestPage() {
     }
     ctx.shadowBlur = 0;
 
-    // 연결선 그리기 (MoveNet 17 키포인트)
+    // 연결선 그리기 (BlazePose 33 키포인트)
     const connections = [
-      // 얼굴
+      // 얼굴 (0-10)
       [0, 1],
-      [0, 2],
-      [1, 3],
-      [2, 4], // nose - eyes - ears
-      // 상체
+      [1, 2],
+      [2, 3],
+      [0, 4],
+      [4, 5],
       [5, 6],
-      [5, 7],
-      [7, 9],
-      [6, 8],
-      [8, 10], // shoulders - arms
-      [5, 11],
-      [6, 12],
-      [11, 12], // torso
-      // 하체
+      [0, 7],
+      [0, 8],
+      [9, 10],
+      // 상체 (어깨 11-12, 팔꿈치 13-14, 손목 15-16)
+      [11, 12],
       [11, 13],
       [13, 15],
       [12, 14],
-      [14, 16], // hips - legs
+      [14, 16],
+      // 손 (17-22)
+      [15, 17],
+      [15, 19],
+      [15, 21],
+      [16, 18],
+      [16, 20],
+      [16, 22],
+      // 몸통 (어깨 - 엉덩이 23-24)
+      [11, 23],
+      [12, 24],
+      [23, 24],
+      // 하체 (엉덩이 - 무릎 25-26, 발목 27-28)
+      [23, 25],
+      [25, 27],
+      [24, 26],
+      [26, 28],
+      // 발 (29-32)
+      [27, 29],
+      [27, 31],
+      [28, 30],
+      [28, 32],
     ];
 
     ctx.strokeStyle = '#00ff00';
@@ -255,7 +365,8 @@ export default function BodyTrackingTestPage() {
   return (
     <div className="flex flex-col h-screen bg-gray-900 text-white p-4">
       <h1 className="text-3xl font-bold mb-4 text-center">
-        MoveNet 기반 VRM 상체 트래킹 테스트 (안정적, 빠름)
+        BlazePose 기반 VRM 상체 트래킹 테스트 (33 landmarks + Z-depth, TFjs
+        lite)
       </h1>
 
       <div className="flex flex-grow gap-4">
@@ -331,10 +442,12 @@ export default function BodyTrackingTestPage() {
           <div className="mt-4 p-3 bg-blue-900 bg-opacity-50 rounded-md text-xs">
             <p className="font-semibold mb-1">💡 Webpack 모드 정보:</p>
             <p>
-              Turbopack 대신 Webpack을 사용하여 TensorFlow.js와 MoveNet이
-              정상적으로 동작합니다.
+              Turbopack 대신 Webpack을 사용하여 TensorFlow.js와 BlazePose (TFjs
+              lite runtime)가 정상적으로 동작합니다.
             </p>
-            <p className="mt-1">빌드 시간이 더 소요될 수 있습니다.</p>
+            <p className="mt-1">
+              lite 모델: full 모델보다 가볍고 안정적이며, NaN 문제가 없습니다.
+            </p>
           </div>
         </div>
 
