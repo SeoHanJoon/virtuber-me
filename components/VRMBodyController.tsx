@@ -13,26 +13,13 @@ import type {
 } from '@/types/bodyTracking';
 
 interface VRMBodyControllerProps {
-  // 비디오 ref (웹캠)
   videoRef: React.RefObject<HTMLVideoElement | null>;
-
-  // VRM 모델 URL
   vrmUrl: string;
-
-  // 캔버스 크기
   width?: number;
   height?: number;
-
-  // 트래킹 옵션
   trackingOptions?: BodyTrackingOptions;
-
-  // VRM 로드 완료 시 콜백
   onVRMLoaded?: (vrm: VRM) => void;
-
-  // 트래킹 시작/중지 트리거
   isTrackingActive: boolean;
-
-  // 키포인트 업데이트 콜백 (랜드마크 시각화용)
   onKeypointsUpdate?: (
     keypoints: Array<{
       x: number;
@@ -67,31 +54,27 @@ export function VRMBodyController({
   const baseOffsetsRef = useRef<BoneBaseOffsets | null>(null);
   const logCounterRef = useRef(0);
 
-  // useBodyTracking 훅
   const {
     bodyState,
     isBodyTrackingReady,
     startBodyTracking,
     stopBodyTracking,
-    keypoints, // 랜드마크 시각화에 사용
+    keypoints,
     error,
   } = useBodyTracking(videoRef, trackingOptions);
 
-  // 에러 로깅
   useEffect(() => {
     if (error) {
       console.error('[VRMBodyController] useBodyTracking 에러:', error);
     }
   }, [error]);
 
-  // 키포인트 업데이트 전달
   useEffect(() => {
     if (onKeypointsUpdate) {
       onKeypointsUpdate(keypoints);
     }
   }, [keypoints, onKeypointsUpdate]);
 
-  // 트래킹 활성화/비활성화
   useEffect(() => {
     console.log('[VRMBodyController] 트래킹 상태 변경:', {
       isTrackingActive,
@@ -112,9 +95,7 @@ export function VRMBodyController({
     videoRef,
   ]);
 
-  /**
-   * Three.js 씬 초기화
-   */
+  // Three.js 씬 초기화
   useEffect(() => {
     if (!canvasRef.current) {
       console.warn('[VRMBodyController] Canvas ref가 없습니다');
@@ -127,12 +108,12 @@ export function VRMBodyController({
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(30, width / height, 0.1, 1000);
-    camera.position.set(0, 1.6, 1.6); // VRM에 적합한 카메라 위치
+    camera.position.set(0, 1.6, 1.6);
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({
       canvas: canvasRef.current,
-      alpha: true, // 투명 배경
+      alpha: true,
       antialias: true,
     });
     renderer.setSize(width, height);
@@ -145,19 +126,16 @@ export function VRMBodyController({
       pixelRatio: window.devicePixelRatio,
     });
 
-    // 조명
     const light = new THREE.DirectionalLight(0xffffff);
     light.position.set(1, 1, 1).normalize();
     scene.add(light);
     scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 
-    // OrbitControls (카메라 조작)
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 0.8, 0); // VRM의 중심
+    controls.target.set(0, 0.8, 0);
     controls.update();
     controlsRef.current = controls;
 
-    // 애니메이션 루프
     const animate = () => {
       animationFrameId.current = requestAnimationFrame(animate);
 
@@ -181,9 +159,7 @@ export function VRMBodyController({
     };
   }, [width, height]);
 
-  /**
-   * VRM 모델 로드
-   */
+  // VRM 모델 로드
   useEffect(() => {
     if (!sceneRef.current || !vrmUrl) return;
 

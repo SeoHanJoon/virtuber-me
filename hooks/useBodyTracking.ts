@@ -64,9 +64,7 @@ export function useBodyTracking(
   // 이전 프레임의 스무딩된 키포인트 저장
   const smoothedKeypoints = useRef<Map<string, THREE.Vector3>>(new Map());
 
-  /**
-   * TensorFlow.js와 BlazePose 모델 로드
-   */
+  // TensorFlow.js와 MoveNet 모델 로드
   useEffect(() => {
     const loadModel = async () => {
       try {
@@ -129,10 +127,7 @@ export function useBodyTracking(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /**
-   * 키포인트를 3D로 변환 및 스무딩
-   * MoveNet은 x, y만 제공하므로 z는 Y 기반으로 근사
-   */
+  // 키포인트 2D → Pseudo-3D 변환 및 EMA 스무딩
   const processKeypoints = useCallback(
     (
       rawKeypoints: Array<{
@@ -280,18 +275,12 @@ export function useBodyTracking(
     [depthScale, smoothingFactor, minConfidence]
   );
 
-  /**
-   * 키포인트를 기반으로 VRM 본 회전 계산
-   * MoveNet은 name 속성이 없으므로 인덱스로 접근
-   * COCO format:
-   * 0: nose, 5: left_shoulder, 6: right_shoulder,
-   * 7: left_elbow, 8: right_elbow, 9: left_wrist, 10: right_wrist,
-   * 11: left_hip, 12: right_hip
-   */
+  // VRM 본 회전 계산 (Euler 각도 → Quaternion)
+  // MoveNet COCO: 0=nose, 5=left_shoulder, 6=right_shoulder, 7=left_elbow, 8=right_elbow,
+  // 9=left_wrist, 10=right_wrist, 11=left_hip, 12=right_hip
   const calculateBodyRotations = useCallback(
     (kps: Keypoint[]): BodyTrackingState | null => {
-      // MoveNet은 name 속성이 없으므로 인덱스로 접근
-      // 먼저 name으로 시도하고, 실패하면 인덱스로 접근
+      // name으로 먼저 시도, 실패 시 인덱스로 접근
       const getKeypoint = (name: string, index: number) => {
         const byName = kps.find((kp) => kp.name === name);
         if (byName) return byName;
@@ -399,24 +388,24 @@ export function useBodyTracking(
       const lh = new THREE.Vector3(leftHip.x, leftHip.y, leftHip.z ?? 0);
       const rh = new THREE.Vector3(rightHip.x, rightHip.y, rightHip.z ?? 0);
 
-      // 척추/가슴 회전 (어깨 중앙과 엉덩이 중앙 기준)
+      // 척추/가슴: 어깨-엉덩이 중심선 기준 회전
       const shoulderCenter = ls.clone().lerp(rs, 0.5);
       const hipCenter = lh.clone().lerp(rh, 0.5);
       const spineVector = shoulderCenter.clone().sub(hipCenter).normalize();
-      const forwardVector = new THREE.Vector3(0, 1, 0); // VRM의 기본 척추 방향 (Y-up)
+      const forwardVector = new THREE.Vector3(0, 1, 0);
       const spineQuaternion = new THREE.Quaternion().setFromUnitVectors(
         forwardVector,
         spineVector
       );
 
-      // 머리/목 회전 (코와 어깨 중앙 기준)
+      // 머리/목: 코-어깨 중심선 기준 회전
       const headVector = n.clone().sub(shoulderCenter).normalize();
       const headQuaternion = new THREE.Quaternion().setFromUnitVectors(
         forwardVector,
         headVector
       );
 
-      // 팔 회전 계산 (각도 기반 - 안정적)
+      // 팔 회전: Euler 각도(pitch, yaw) → Quaternion 변환
       const calculateArmRotation = (
         shoulder: THREE.Vector3,
         elbow: THREE.Vector3,
@@ -425,13 +414,13 @@ export function useBodyTracking(
       ) => {
         const sideMultiplier = isLeft ? 1 : -1;
 
-        // 기본 T-pose Quaternion (항상 유효한 값 반환)
+        // T-pose 기본값 (NaN 방지)
         const defaultRotation = {
           upperArm: new THREE.Quaternion(),
           lowerArm: new THREE.Quaternion(),
         };
 
-        // 상완 벡터 (어깨 -> 팔꿈치)
+        // 상완 벡터: 어깨 → 팔꿈치
         const upperArmVec = elbow.clone().sub(shoulder);
         const upperLength = upperArmVec.length();
 

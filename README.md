@@ -1,460 +1,241 @@
 # Virtuber Me
 
-웹 기반 VTuber 플랫폼 - VRM 아바타 + 실시간 얼굴 추적 + 멀티플레이어
+웹 기반 VTuber 플랫폼 - VRM 아바타 + 실시간 얼굴 & 상체 추적
+
+## 📌 프로젝트 현황
+
+### ✅ 완료된 기능
+
+1. **VRM 모델 뷰어** - 3D 아바타 로드 및 표시
+2. **실시간 얼굴 추적** - MediaPipe Face Landmarker (468 landmarks + 52 ARKit BlendShapes)
+3. **MoveNet 상체 트래킹** - TensorFlow.js 기반 17 keypoints 추적
+4. **VRM 수동 제어** - 슬라이더로 본 회전 직접 조절
+5. **BlendShapes 모니터** - 실시간 표정 파라미터 시각화
+6. **랜드마크 시각화** - 얼굴/상체 keypoints 오버레이
+
+### 🔄 실패한 기능 (MoveNet 상체 트래킹 안정화)
+
+**시도한 접근 방법**:
+
+- ❌ **BlazePose (MediaPipe Runtime)**: Webpack 호환성 문제로 실패
+- ❌ **BlazePose (TFjs Runtime, full model)**: `null` 값 반환 문제
+- ❌ **BlazePose (TFjs Runtime, lite model)**: 워밍업 단계에서 포즈 감지 실패
+- ✅ **MoveNet (TFjs Runtime, Lightning)**: **현재 채택** - 안정적이고 빠름 (>50FPS), 자연스럽지 않음
+
+### 📊 기술적 도전 과제 및 해결
+
+| 문제                            | 원인                                                                  | 해결 방법                                  |
+| ------------------------------- | --------------------------------------------------------------------- | ------------------------------------------ |
+| BlazePose MediaPipe 런타임 오류 | Next.js Webpack이 `@mediapipe/pose` 패키지를 올바르게 번들링하지 못함 | TFjs 런타임으로 전환                       |
+| BlazePose TFjs `null` 값 반환   | 브라우저 환경에서 'full' 모델이 초기화 실패                           | MoveNet으로 전환                           |
+| VRM 아바타 접힘/사라짐          | 회전값이 항상 적용되어 기본 포즈 손상                                 | 트래킹 비활성화 시 리셋 로직 추가          |
+| `NaN` 회전값                    | Z축 값 `undefined`, 벡터 길이 0                                       | `?? 0` 및 `isFinite()` 체크 추가           |
+| 좌표계 불일치                   | MoveNet은 픽셀 좌표, 정규화 필요                                      | `x / videoWidth`, `y / videoHeight` 변환   |
+| 웹캠 초기화 실패                | `loadedmetadata` 전에 `play()` 호출                                   | 이벤트 리스너를 `srcObject` 할당 전에 설정 |
 
 ## 🚀 주요 기능
 
-- **VRM 모델 뷰어**: 3D 아바타 확인 및 탐색
-- **실시간 얼굴 추적**: 웹캠으로 아바타 실시간 조종 (정밀 표정 인식 🎯)
-- **상체 및 손 추적**: MediaPipe Pose/Hand로 상체 움직임 및 손가락 제스처 추적 🙆✋
-- **MoveNet 상체 트래킹**: TensorFlow.js 기반 단안 카메라 상체 추적 (안정적, 빠름) 🆕🎯
-- **VRM 수동 제어**: 슬라이더로 각 본(Bone) 회전을 직접 조절 🎮
-- **멀티플레이어 월드**: 최대 100명이 동시 접속 가능한 VRM 아바타 월드 🎉
-- **고급 얼굴 분석**: 입 모양, 눈 깜빡임, 시선, 미소 감지 (468+ 랜드마크)
-- **ARKit BlendShapes 지원**: MediaPipe의 52개 BlendShapes로 미세한 표정 제어 🆕
-- **실시간 시각화**: 얼굴 랜드마크 오버레이 및 BlendShapes 모니터 🆕
+### 1. 얼굴 추적
+
+- **468개 랜드마크** 실시간 추적
+- **52개 ARKit BlendShapes** 지원
+- 눈 깜빡임, 입 모양, 시선, 미소, 감정 표현 인식
+- 정밀 스무딩 및 정규화
+
+### 2. 상체 트래킹 (MoveNet)
+
+- **17개 keypoints** 추적
+- 양쪽 팔 회전 (상완/전완)
+- 척추, 가슴, 머리 회전
+- Pseudo-3D 좌표 변환 (Y 기반 깊이 근사)
+- EMA 스무딩으로 떨림 방지
+
+### 3. VRM 수동 제어
+
+- 슬라이더로 각 본 회전 직접 조절
+- 척추, 가슴, 양팔, 머리 제어
+- 실시간 반영 및 리셋 기능
+
+### 4. 멀티플레이어
+
+- Socket.IO 기반 실시간 동기화
+- 최대 100명 동시 접속
+- 얼굴 추적 데이터만 전송 (이미지/비디오 전송 없음)
+- WASD 이동 및 시점 회전
 
 ## 📦 기술 스택
 
 - **Frontend**: Next.js 15 + TypeScript + Tailwind CSS 4
-- **빌드 시스템**: Webpack (TensorFlow.js 호환성을 위해 Turbopack 비활성화) ⚠️
-- **3D 렌더링**: Three.js + @pixiv/three-vrm
+- **빌드**: Webpack (TensorFlow.js 호환성)
+- **3D**: Three.js + @pixiv/three-vrm
 - **추적**:
-  - MediaPipe Face/Pose/Hand Landmarker
-  - TensorFlow.js + MoveNet (단안 카메라 2D 추적, 안정적) 🆕
+  - MediaPipe Face Landmarker (얼굴)
+  - TensorFlow.js + MoveNet Lightning (상체)
 - **멀티플레이어**: Socket.IO + Express
 - **코드 품질**: ESLint + Prettier + Husky
 - **Node.js**: 22.20.0
-
-### ⚠️ 중요: Webpack 모드 사용
-
-Next.js 15.5.4의 기본 빌드 시스템인 Turbopack은 `@mediapipe/pose`와 `@tensorflow-models/pose-detection`의 ESM export를 올바르게 해석하지 못합니다. 이 문제를 해결하기 위해 프로젝트는 **Webpack 모드**로 전환되었습니다.
-
-- `package.json`의 `dev`와 `build` 스크립트에서 `--turbopack` 플래그가 제거되었습니다
-- `next.config.ts`에 TensorFlow.js와 MediaPipe를 위한 Webpack 설정이 추가되었습니다
-- 모든 TensorFlow.js 관련 코드는 `dynamic import`와 `'use client'`로 클라이언트 사이드 전용으로 처리됩니다
-
-## 📁 프로젝트 구조
-
-\`\`\`
-virtuber-me/
-├── app/
-│ ├── page.tsx # 메인 페이지
-│ ├── vrm/ # VRM 뷰어
-│ ├── face-tracking/ # 얼굴 추적
-│ ├── body-tracking-test/ # MoveNet 상체 추적 테스트 🆕
-│ ├── multiplayer/ # 멀티플레이어 월드 ✨
-│ └── api/vrm-models/ # VRM 파일 목록 API
-├── components/
-│ ├── VRMViewer.tsx # VRM 뷰어 컴포넌트
-│ ├── FaceTrackingVRMViewer.tsx # 얼굴 추적 메인 컴포넌트 (리팩토링됨)
-│ ├── VRMBodyController.tsx # MoveNet 상체 제어 🆕
-│ ├── MultiplayerVRMWorld.tsx # 멀티플레이어 컴포넌트
-│ ├── TrackingStatusIndicator.tsx # 추적 상태 표시 UI
-│ ├── ExpressionSettingsPanel.tsx # 통합 설정 패널
-│ ├── VRMManualControl.tsx # VRM 수동 제어 패널 (슬라이더) 🎮
-│ └── LandmarkVisualizer.tsx # 랜드마크 시각화
-├── hooks/
-│ ├── useWebcam.ts # 웹캠 관리 훅
-│ ├── useMediaPipeLandmarkers.ts # MediaPipe 초기화 훅
-│ ├── useVRMScene.ts # Three.js Scene 관리 훅
-│ ├── useBodyTracking.ts # MoveNet 상체 추적 훅 🆕
-│ ├── useFaceTracking.ts # 얼굴 추적 훅
-│ ├── useExpressionMapping.ts # 표정 매핑 훅
-│ ├── useNetworkSync.ts # 네트워크 동기화 훅
-│ └── useControls.ts # WASD 컨트롤 훅
-├── utils/
-│ ├── faceStateCalculator.ts # 정밀 얼굴 상태 계산기 🎯
-│ ├── bodyStateCalculator.ts # 상체 및 손 추적 계산기 🙆✋
-│ ├── quaternionHelper.ts # Quaternion 회전 유틸 🆕
-│ ├── mediapipeBlendShapes.ts # MediaPipe BlendShapes 매핑
-│ ├── vrmTracking.ts # VRM 추적 적용 함수
-│ ├── vrmTransforms.ts # VRM 변형 유틸
-│ └── README.md # 상세 사용법 문서
-├── types/
-│ ├── vrm.ts # VRM 타입 정의
-│ ├── bodyTracking.ts # MoveNet 상체 추적 타입 🆕
-│ ├── multiplayer.ts # 멀티플레이어 타입 정의
-│ ├── tracking.ts # 추적 타입 정의
-│ └── components.ts # 컴포넌트 Props 타입
-├── server/ # 멀티플레이어 서버
-│ ├── index.ts # Socket.IO 서버
-│ ├── types.ts # 타입 정의
-│ └── package.json # 서버 의존성
-└── public/models/ # VRM 파일 저장
-\`\`\`
-
-### 📐 최신 아키텍처 (리팩토링됨) 🆕
-
-**컴포넌트 분리 원칙**:
-
-- **단일 책임 원칙 (SRP)**: 각 파일이 하나의 명확한 책임만 가짐
-- **재사용성**: Custom Hooks로 로직 분리 → 다른 컴포넌트에서도 사용 가능
-- **테스트 용이성**: 작은 단위로 분리되어 개별 테스트 가능
-- **가독성**: 각 파일이 200줄 이하로 유지
-
-**FaceTrackingVRMViewer 구조** (952줄 → 355줄로 축소):
-\`\`\`
-FaceTrackingVRMViewer.tsx (메인)
-├─ useWebcam() ← 웹캠 관리
-├─ useMediaPipeLandmarkers() ← MediaPipe 초기화
-├─ useVRMScene() ← Three.js Scene 관리
-├─ vrmTracking 함수들 ← 추적 데이터 적용
-├─ TrackingStatusIndicator ← 상태 UI
-├─ ExpressionSettingsPanel ← 통합 설정 UI (모델 변형, 추적, 표정 강도, BlendShapes) 🔄
-└─ LandmarkVisualizer ← 랜드마크 시각화 🆕
-\`\`\`
 
 ## 🛠️ 설치 및 실행
 
 ### 1. Node.js 버전 설정
 
-\`\`\`bash
-nvm use # .nvmrc 파일 사용 (Node 22.20.0)
-\`\`\`
+```bash
+nvm use  # .nvmrc 파일 사용 (Node 22.20.0)
+```
 
 ### 2. 의존성 설치
 
-\`\`\`bash
-
-# 클라이언트 의존성
-
+```bash
 npm install
-
-# 서버 의존성
-
-npm run server:install
-\`\`\`
+npm run server:install  # 멀티플레이어 서버용
+```
 
 ### 3. 개발 서버 실행
 
-#### 클라이언트만 실행 (VRM 뷰어, 얼굴 추적)
+```bash
+# 클라이언트
+npm run dev  # http://localhost:3000
 
-\`\`\`bash
-npm run dev
-\`\`\`
-
-브라우저에서 접속: \`http://localhost:3000\`
-
-#### 멀티플레이어 서버 실행 (별도 터미널)
-
-\`\`\`bash
-npm run server:dev
-\`\`\`
-
-서버 실행: \`http://localhost:3001\`
-
-#### 두 서버 모두 실행 (멀티플레이어 사용)
-
-터미널 1:
-\`\`\`bash
-npm run dev
-\`\`\`
-
-터미널 2:
-\`\`\`bash
-npm run server:dev
-\`\`\`
-
-이제 \`http://localhost:3000/multiplayer\`에서 멀티플레이어 월드에 접속할 수 있습니다!
-
-## 🎯 고급 기능: FaceStateCalculator
-
-MediaPipe의 468개 랜드마크를 분석하여 정밀한 얼굴 상태를 계산합니다.
-
-### 특징
-
-- 🎯 **9가지 상태 추적**: 입 벌림, 입 너비, 미소, 양쪽 눈 깜빡임, 시선 4방향
-- 🎬 **스무딩**: Lerp를 통한 부드러운 애니메이션
-- ⚡ **고성능**: 30fps 이상 유지
-- 🔄 **자동 decay**: 얼굴 미감지 시 중립 상태로 자동 전환
-- 📐 **정규화**: 얼굴 크기 무관한 일관된 값
-
-### 사용 예제
-
-```typescript
-import {
-  FaceStateCalculator,
-  mapFaceStateToVRM,
-} from '@/utils/faceStateCalculator';
-
-// 계산기 생성 (스무딩 강도: 0.7)
-const calculator = new FaceStateCalculator(0.7);
-
-// MediaPipe 결과로부터 얼굴 상태 계산
-const faceState = calculator.calculateFaceState(landmarks);
-
-// VRM 표정으로 변환 및 적용
-const vrmMapping = mapFaceStateToVRM(faceState);
-vrm.expressionManager.setValue(
-  vrmMapping.mouth.expression,
-  vrmMapping.mouth.value
-);
+# 멀티플레이어 서버 (별도 터미널)
+npm run server:dev  # http://localhost:3001
 ```
 
-자세한 사용법은 [`utils/README.md`](./utils/README.md)를 참고하세요.
+### 4. 페이지별 기능
 
-## 📝 사용 방법
+| 경로                  | 기능                    |
+| --------------------- | ----------------------- |
+| `/`                   | 메인 페이지 (기능 목록) |
+| `/vrm`                | VRM 뷰어                |
+| `/face-tracking`      | 얼굴 추적 + VRM         |
+| `/body-tracking-test` | 상체 추적 + VRM         |
+| `/multiplayer`        | 멀티플레이어 월드       |
+
+## ⚙️ 설정 옵션
+
+### MoveNet 상체 추적
+
+```typescript
+{
+  depthScale: 0.3,        // Z축 깊이 스케일 (0.1~0.5)
+  smoothingFactor: 0.3,   // EMA 스무딩 (0~1, 높을수록 부드러움)
+  maxFPS: 30,             // FPS 제한
+  minConfidence: 0.3      // 최소 keypoint 신뢰도
+}
+```
+
+### 얼굴 추적
+
+```typescript
+{
+  smoothingFactor: 0.7,   // 스무딩 강도
+  multipliers: {
+    blink: 1.5,           // 눈 깜빡임 강도
+    mouthOpen: 1.0,       // 입 벌림 강도
+    mouthSmile: 1.0,      // 미소 강도
+    eyeLook: 1.0          // 시선 강도
+  }
+}
+```
+
+## 📁 프로젝트 구조
+
+```
+virtuber-me/
+├── app/                      # Next.js 페이지
+│   ├── page.tsx
+│   ├── vrm/
+│   ├── face-tracking/
+│   ├── body-tracking-test/
+│   └── multiplayer/
+├── components/               # React 컴포넌트
+│   ├── VRMViewer.tsx
+│   ├── FaceTrackingVRMViewer.tsx
+│   ├── VRMBodyController.tsx
+│   ├── BodyTrackingTestPage.tsx
+│   └── MultiplayerVRMWorld.tsx
+├── hooks/                    # Custom Hooks
+│   ├── useBodyTracking.ts   # MoveNet 상체 추적
+│   ├── useFaceTracking.ts   # 얼굴 추적
+│   ├── useWebcam.ts
+│   └── useVRMScene.ts
+├── utils/                    # 유틸리티 함수
+│   ├── faceStateCalculator.ts
+│   ├── bodyStateCalculator.ts
+│   └── vrmTracking.ts
+├── types/                    # TypeScript 타입
+│   ├── bodyTracking.ts
+│   ├── tracking.ts
+│   └── vrm.ts
+├── server/                   # Socket.IO 서버
+│   ├── index.ts
+│   └── types.ts
+└── public/models/            # VRM 파일 저장
+```
+
+## 🎯 사용 방법
 
 ### VRM 모델 추가
 
-1. VRM 파일을 \`public/models/\` 디렉토리에 추가
+1. VRM 파일을 `public/models/` 디렉토리에 추가
 2. 서버 재시작 없이 자동으로 목록에 추가됨
-3. VRM 뷰어 또는 얼굴 추적 페이지에서 선택 가능
+3. 각 페이지에서 드롭다운으로 선택 가능
 
-### VRM 모델 다운로드
+### VRM 다운로드
 
 - **VRoid Hub**: https://hub.vroid.com/
 - **VRoid Studio**: https://vroid.com/studio
-- **Three-VRM 샘플**: https://github.com/pixiv/three-vrm
+- **샘플 모델**: https://github.com/pixiv/three-vrm
 
-## 🎭 얼굴 추적 기능
+### 상체 트래킹 사용 팁
 
-### 지원 표정
+- 상체 전체(어깨~손목)가 화면에 보이도록 조정
+- 밝은 조명 권장
+- 웹캠과 1~2m 거리 유지
+- 천천히 움직이면 더 정확함
 
-- **눈 깜빡임**: 좌/우 독립 추적 (\`blinkLeft\`, \`blinkRight\`)
-- **입 모양**: 다양한 발음 형태 (\`aa\`, \`ih\`, \`ou\`, \`ee\`, \`oh\`)
-- **머리 회전**: Yaw, Pitch, Roll 3축 추적
-- **시선 방향**: 위/아래/좌/우 (\`lookUp\`, \`lookDown\`, \`lookLeft\`, \`lookRight\`)
-- **감정 표현**: 행복, 슬픔, 화남, 편안함 (\`happy\`, \`sad\`, \`angry\`, \`relaxed\`)
+## 📊 성능
 
-### 사용 팁
+| 항목       | MoveNet | MediaPipe Face |
+| ---------- | ------- | -------------- |
+| FPS        | 50+     | 30+            |
+| 지연 시간  | ~33ms   | ~50ms          |
+| CPU 사용률 | 낮음    | 중간           |
+| 메모리     | ~50MB   | ~100MB         |
+| 모델 크기  | 2MB     | 10MB           |
 
-- 밝은 조명에서 사용
-- 얼굴을 카메라 정면에 위치
-- 과장된 표정으로 더 잘 인식
-- HTTPS 환경 권장 (웹캠 접근용, localhost는 예외)
+## 🐛 문제 해결
 
-## 🎮 VRM 수동 제어
+### 웹캠이 작동하지 않음
 
-### 기능
+- 브라우저 권한 확인 (설정 → 개인정보 → 카메라)
+- HTTPS 환경 필요 (localhost는 HTTP 허용)
 
-- **슬라이더 제어**: 각 본(Bone)의 회전을 슬라이더로 직접 조절
-- **실시간 반영**: 값 변경 시 즉시 VRM 모델에 적용
-- **정밀 조정**: 라디안 값을 도(°) 단위로 표시
-- **자동 추적 비활성화**: 수동 제어 활성화 시 자동 추적 중지
+### 상체 트래킹이 반응 없음
 
-### 제어 가능한 본
+- "트래킹 시작" 버튼 클릭 확인
+- 콘솔에서 `[useBodyTracking]` 로그 확인
+- 웹캠에 상체 전체가 보이는지 확인
 
-| 본              | 축      | 설명               |
-| --------------- | ------- | ------------------ |
-| **척추**        | X, Y, Z | 상체 기울임        |
-| **가슴**        | X, Y, Z | 상체 상단 회전     |
-| **왼팔 상완**   | X, Y, Z | 왼쪽 어깨~팔꿈치   |
-| **왼팔 전완**   | X, Y, Z | 왼쪽 팔꿈치~손목   |
-| **오른팔 상완** | X, Y, Z | 오른쪽 어깨~팔꿈치 |
-| **오른팔 전완** | X, Y, Z | 오른쪽 팔꿈치~손목 |
-| **머리**        | X, Y, Z | 머리 회전          |
+### VRM 아바타가 이상하게 움직임
 
-### 사용 방법
+- 다른 VRM 모델로 테스트
+- "리셋" 버튼으로 기본 포즈로 복귀
+- 수동 제어 모드 OFF 확인
 
-1. `/face-tracking` 페이지 접속
-2. 우측 상단 "🎮 수동 제어" 버튼 클릭
-3. "▶" 버튼 클릭하여 패널 확장
-4. 슬라이더로 원하는 포즈 조정
-5. "리셋" 버튼으로 초기화
+## 📚 추가 문서
 
-📖 자세한 사용법은 [`VRM_MANUAL_CONTROL_GUIDE.md`](./VRM_MANUAL_CONTROL_GUIDE.md)를 참고하세요.
+- **Face State Calculator**: `utils/README.md`
+- **멀티플레이어 서버**: `server/README.md`
 
-## 🌐 멀티플레이어 월드
+## 🎯 향후 계획
 
-### 기능
-
-- **실시간 동기화**: Socket.IO로 최대 100명 동시 접속
-- **얼굴 추적**: 각 사용자의 표정이 실시간으로 동기화
-- **WASD 이동**: 키보드로 월드 내 이동
-- **성능 최적화**: 거리 기반 LOD 및 렌더링 컬링
-
-### 조작법
-
-- **W/A/S/D**: 캐릭터 이동 (앞/왼쪽/뒤/오른쪽)
-- **Shift**: 달리기
-- **마우스 이동**: 시점 회전
-
-### 주의 사항
-
-⚠️ **개인정보 보호**: 이 시스템은 **이미지나 비디오를 전송하지 않으며**, 오직 얼굴 추적 결과(표정 데이터, 머리 회전 등)만 서버로 전송합니다.
-
-⚠️ **HTTPS 필수**: 웹캠 사용을 위해 HTTPS 환경이 필요합니다 (localhost는 HTTP 허용).
-
-⚠️ **서버 실행**: 멀티플레이어 기능을 사용하려면 서버가 실행 중이어야 합니다.
-
-## 📜 스크립트
-
-### 클라이언트
-
-\`\`\`bash
-npm run dev # 개발 서버 시작
-npm run build # 프로덕션 빌드
-npm run start # 프로덕션 서버 시작
-npm run lint # ESLint 실행
-npm run lint:fix # ESLint 자동 수정
-npm run format # Prettier 포맷팅
-\`\`\`
-
-### 서버
-
-\`\`\`bash
-npm run server:install # 서버 의존성 설치
-npm run server:dev # 서버 개발 모드 실행
-npm run server:build # 서버 빌드
-npm run server:start # 서버 프로덕션 실행
-\`\`\`
-
-## 🏗️ 아키텍처
-
-### 멀티플레이어 동기화
-
-```
-[클라이언트 1]                    [서버]                    [클라이언트 2]
-     |                               |                               |
-     |-- join (modelPath) --------→ |                               |
-     |                               |←-- snapshot (모든 사용자) ----|
-     |                               |                               |
-     |-- update (pos, rot, expr) -→ |                               |
-     |                               |-- broadcast update --------→ |
-     |                               |                               |
-     |←-- user_update (다른사용자) --|                               |
-```
-
-### 데이터 페이로드 (최적화)
-
-\`\`\`typescript
-{
-id: "user-uuid",
-pos: [x, y, z], // 위치 (Float32)
-rot: [x, y, z, w], // 회전 (Quaternion)
-expr: "aa", // 현재 표정
-blinkL: 0.8, // 왼쪽 눈 깜빡임 (0~1)
-blinkR: 0.9, // 오른쪽 눈 깜빡임 (0~1)
-mood: "happy" // 감정 상태
-}
-\`\`\`
-
-- **전송 주기**: 10Hz (100ms)
-- **전송 데이터**: 약 100 bytes/update
-- **네트워크 대역폭**: ~1KB/s per user
-
-## 🔧 성능 최적화
-
-### 클라이언트
-
-- **거리 기반 컬링**: 50m 이상 떨어진 아바타는 렌더링 제외
-- **LOD (Level of Detail)**: 거리에 따른 모델 디테일 조정 (향후 구현)
-- **보간 (Interpolation)**: 네트워크 지연을 부드럽게 처리
-
-### 서버
-
-- **Rate Limiting**: 각 소켓당 10Hz (100ms) 제한
-- **브로드캐스트 최적화**: 변경된 데이터만 전송
-- **자동 정리**: 5분 이상 비활성 세션 자동 제거
-
-## 🎯 MoveNet 기반 상체 트래킹 🆕
-
-### 🌟 주요 특징
-
-**Pseudo-3D 좌표 변환**:
-
-- 단안 카메라의 2D 좌표를 y 기반 깊이 근사치로 변환
-- 깊이(z) = `-(y - 0.5) * depthScale`
-- 중심 정규화: `(0.5, 0.5)` → `(0, 0)`
-
-**EMA 스무딩**:
-
-- 지수 이동 평균으로 떨림 감소
-- 부드러운 움직임 보장
-- 설정 가능한 smoothingFactor (0~1)
-
-**Euler 각도 기반 회전**:
-
-- `Math.atan2()`: pitch, yaw 계산
-- `setFromAxisAngle()`: 팔꿈치 굽힘 계산
-- Base Offset: 모델별 초기 회전값 보정
-- NaN 안전성: 모든 계산에 `isFinite()` 체크
-
-**FPS 제한 & 최적화**:
-
-- 30 FPS 제한으로 안정적인 성능
-- `requestAnimationFrame` 기반 렌더링 루프
-- 신뢰도 필터링 (minConfidence: 0.25)
-
-### 🔧 사용 방법
-
-```bash
-# 1. 개발 모드 실행
-npm run dev
-
-# 2. 테스트 페이지 접속
-http://localhost:3000/body-tracking-test
-
-# 3. 웹캠 권한 허용
-
-# 4. "트래킹 시작" 버튼 클릭
-
-# 5. 팔을 천천히 움직여보세요!
-```
-
-**주의사항**: TensorFlow.js MoveNet은 클라이언트 사이드 전용이므로 `npm run dev`로 개발 모드에서 테스트하세요.
-
-### ⚙️ 설정 옵션
-
-```typescript
-{
-  depthScale: 0.3,        // z축 스케일 (낮을수록 깊이감 적음)
-  smoothingFactor: 0.3,   // EMA 스무딩 (높을수록 부드러움)
-  maxFPS: 30,             // FPS 제한
-  slerpAmount: 0.15,      // Quaternion 보간 강도
-  minConfidence: 0.3      // 최소 신뢰도 임계값
-}
-```
-
-### 📊 기술 비교
-
-| 항목                | MediaPipe Pose     | MoveNet (TF.js)        |
-| ------------------- | ------------------ | ---------------------- |
-| **정확도**          | 높음 (33 랜드마크) | 중간 (17 랜드마크)     |
-| **속도**            | 빠름 (WebGL)       | 매우 빠름 (WASM/WebGL) |
-| **깊이 정보**       | 상대적 z값         | 없음 (Y 기반 근사)     |
-| **모델 크기**       | 중간 (~10MB)       | 매우 작음 (~2MB)       |
-| **브라우저 호환성** | Chrome 우수        | 모든 브라우저 우수     |
-| **CPU 사용률**      | 중간               | 낮음                   |
-| **안정성**          | 보통               | 우수 (Webpack 호환)    |
-
-### 🎨 구현 구조
-
-```
-useBodyTracking (훅)
-    ↓
-MoveNet Detector (Lightning)
-    ↓
-Keypoint 추출 (17개)
-    ↓
-2D → Pseudo-3D 변환 (Y 기반)
-    ↓
-EMA 스무딩
-    ↓
-bodyState 반환
-    ↓
-VRMBodyController (컴포넌트)
-    ↓
-Euler 각도 → Quaternion 회전 계산
-    ↓
-Base Offset 적용
-    ↓
-Slerp 보간
-    ↓
-VRM 본에 적용
-```
-
-## 🎯 향후 개발 계획
-
-- [ ] 보이스 채팅 (WebRTC)
-- [ ] 프라이빗 룸 생성
-- [ ] 제스처 및 이모트
-- [ ] 파티클 이펙트
-- [ ] 커스텀 월드 맵
-- [ ] 데이터베이스 연동 (사용자 프로필)
-- [ ] MoveNet + MediaPipe 하이브리드 트래킹 🆕
+- [x] ✅ 1단계. 얼굴 트래킹 완성
+- ~~[ ] 🔄 2단계. 상체 트래킹 안정화~~
+  - 실패. 단일 카메라로는 깊이감을 표시하기 어려움.
+- [ ] 🚀 3단계. 네트워크 아바타 동기화
+- [ ] 🌎 4단계. 가상 공간 내 이동 및 카메라 조작
+- [ ] ✨ 5단계. 감정 표현과 제스처 시스템
+- [ ] ☁️ 6단계. 서버/클라우드 배포 및 세션 관리
 
 ## 📄 라이선스
 
@@ -462,11 +243,10 @@ MIT License
 
 ---
 
-**Made with ❤️ for VTubers**
-
 ## 🙏 크레딧
 
-- **Three.js**: 3D 렌더링 엔진
-- **@pixiv/three-vrm**: VRM 모델 로더
-- **MediaPipe**: 얼굴 추적 AI
-- **Socket.IO**: 실시간 통신
+- **Three.js** - 3D 렌더링 엔진
+- **@pixiv/three-vrm** - VRM 모델 로더
+- **MediaPipe** - 얼굴 추적 AI
+- **TensorFlow.js** - 머신러닝 프레임워크
+- **Socket.IO** - 실시간 통신
