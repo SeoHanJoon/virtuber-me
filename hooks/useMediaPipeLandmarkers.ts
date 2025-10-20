@@ -75,6 +75,7 @@ export function useMediaPipeLandmarkers({
         faceLandmarkerRef.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isWebcamReady, enableFace]);
 
   // Pose Landmarker 초기화
@@ -121,6 +122,7 @@ export function useMediaPipeLandmarkers({
         poseLandmarkerRef.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isWebcamReady, enableBody]);
 
   // Hand Landmarker 초기화
@@ -167,6 +169,7 @@ export function useMediaPipeLandmarkers({
         handLandmarkerRef.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isWebcamReady, enableHand]);
 
   return {
