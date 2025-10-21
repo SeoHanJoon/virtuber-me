@@ -31,19 +31,12 @@ export interface LocalPlayerState {
  * 훅 반환 타입
  */
 export interface UseNetworkSyncReturn {
-  // 연결 상태
   isConnected: boolean;
   myUserId: string | null;
-
-  // 다른 사용자들의 상태
   otherUsers: Map<string, UserState>;
-
-  // 제어 함수
-  connect: (modelPath: string, nickname?: string) => void;
+  connect: (modelPath: string, nickname?: string, roomId?: string) => void;
   disconnect: () => void;
   updateMyState: (state: LocalPlayerState) => void;
-
-  // 에러
   error: string | null;
 }
 
@@ -73,13 +66,18 @@ export function useNetworkSync(
    * 서버에 연결
    */
   const connect = useCallback(
-    (modelPath: string, nickname?: string) => {
+    (modelPath: string, nickname?: string, roomId?: string) => {
       if (socketRef.current) {
         console.warn('[Network] 이미 연결되어 있습니다.');
         return;
       }
 
-      console.log('[Network] 서버 연결 중:', serverUrl);
+      console.log(
+        '[Network] 서버 연결 중:',
+        serverUrl,
+        '룸:',
+        roomId || 'default'
+      );
 
       const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(
         serverUrl,
@@ -100,8 +98,8 @@ export function useNetworkSync(
         setIsConnected(true);
         setError(null);
 
-        // 월드 접속
-        socket.emit('join', { modelPath, nickname });
+        // 룸 접속
+        socket.emit('join', { roomId, modelPath, nickname });
       });
 
       // 연결 실패
@@ -122,65 +120,105 @@ export function useNetworkSync(
       socket.on('snapshot', (users: UserState[]) => {
         console.log('[Network] 스냅샷 수신:', users.length, '명');
 
-        const usersMap = new Map<string, UserState>();
-        users.forEach((user) => {
-          // 자신은 제외
-          if (user.id !== myUserId) {
-            usersMap.set(user.id, user);
-          }
-        });
-
-        setOtherUsers(usersMap);
-
-        // 첫 번째 사용자가 자신
+        // 마지막 사용자가 자신 (방금 join한 사용자)
         if (users.length > 0) {
-          setMyUserId(users[users.length - 1].id);
+          const myId = users[users.length - 1].id;
+          setMyUserId(myId);
+
+          console.log('[Network] 내 ID:', myId);
+
+          // 자신을 제외한 다른 사용자들만 추가
+          const usersMap = new Map<string, UserState>();
+          users.forEach((user) => {
+            if (user.id !== myId) {
+              usersMap.set(user.id, user);
+              console.log(
+                '[Network] 다른 사용자 추가:',
+                user.nickname,
+                user.id
+              );
+            }
+          });
+
+          setOtherUsers(usersMap);
+          console.log('[Network] 다른 사용자 수:', usersMap.size);
         }
       });
 
       // 새 사용자 접속
       socket.on('user_joined', (user: UserState) => {
-        console.log('[Network] 사용자 접속:', user.nickname);
+        console.log('[Network] 사용자 접속:', user.nickname, user.id);
 
-        setOtherUsers((prev) => {
-          const next = new Map(prev);
-          if (user.id !== myUserId) {
-            next.set(user.id, user);
-          }
-          return next;
+        setMyUserId((currentMyId) => {
+          setOtherUsers((prev) => {
+            // 자신이 아닌 경우에만 추가
+            if (user.id !== currentMyId) {
+              const next = new Map(prev);
+              next.set(user.id, user);
+              console.log('[Network] 사용자 추가됨:', user.nickname);
+              return next;
+            }
+            console.log('[Network] 자신이므로 추가 안함:', user.nickname);
+            return prev;
+          });
+          return currentMyId;
         });
       });
 
       // 사용자 상태 업데이트
       socket.on('user_update', (payload: UpdatePayload) => {
-        setOtherUsers((prev) => {
-          const user = prev.get(payload.id);
-          if (!user) return prev;
+        setMyUserId((currentMyId) => {
+          // 자신의 업데이트는 무시
+          if (payload.id === currentMyId) {
+            return currentMyId;
+          }
 
-          const next = new Map(prev);
-          next.set(payload.id, {
-            ...user,
-            position: {
-              x: payload.pos[0],
-              y: payload.pos[1],
-              z: payload.pos[2],
-            },
-            rotation: {
-              x: payload.rot[0],
-              y: payload.rot[1],
-              z: payload.rot[2],
-              w: payload.rot[3],
-            },
-            expression: {
-              current: payload.expr,
-              blinkLeft: payload.blinkL,
-              blinkRight: payload.blinkR,
-              mood: payload.mood,
-            },
-            timestamp: Date.now(),
+          setOtherUsers((prev) => {
+            const user = prev.get(payload.id);
+            if (!user) {
+              console.warn(
+                '[Network] 업데이트할 사용자를 찾을 수 없음:',
+                payload.id
+              );
+              return prev;
+            }
+
+            // 디버그: 위치 업데이트 확인 (초당 1회)
+            if (Math.random() < 0.1) {
+              console.log(`[Network] ${user.nickname} 위치 업데이트:`, {
+                x: payload.pos[0].toFixed(2),
+                y: payload.pos[1].toFixed(2),
+                z: payload.pos[2].toFixed(2),
+              });
+            }
+
+            const next = new Map(prev);
+            next.set(payload.id, {
+              ...user,
+              position: {
+                x: payload.pos[0],
+                y: payload.pos[1],
+                z: payload.pos[2],
+              },
+              rotation: {
+                x: payload.rot[0],
+                y: payload.rot[1],
+                z: payload.rot[2],
+                w: payload.rot[3],
+              },
+              expression: {
+                current: payload.expr,
+                blinkLeft: payload.blinkL,
+                blinkRight: payload.blinkR,
+                mood: payload.mood,
+              },
+              timestamp: Date.now(),
+            });
+
+            return next;
           });
 
-          return next;
+          return currentMyId;
         });
       });
 

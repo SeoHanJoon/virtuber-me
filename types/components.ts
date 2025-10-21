@@ -36,22 +36,12 @@ export interface FaceTrackingVRMViewerProps {
  * 멀티플레이어 VRM 월드 컴포넌트 Props
  */
 export interface MultiplayerVRMWorldProps {
-  // 내 아바타 모델 경로
   myModelPath: string;
-
-  // 닉네임
   nickname?: string;
-
-  // 서버 URL
   serverUrl?: string;
-
-  // 캔버스 크기
+  roomId?: string;
   width?: number;
   height?: number;
-
-  // 클래스명
   className?: string;
-
-  // 최대 렌더링 거리 (성능 최적화)
   maxRenderDistance?: number;
 }

@@ -10,7 +10,7 @@
 
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import * as THREE from 'three';
 import { VRM, VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -19,6 +19,7 @@ import { useExpressionMapping } from '../hooks/useExpressionMapping';
 import { useNetworkSync } from '../hooks/useNetworkSync';
 import { useControls } from '../hooks/useControls';
 import type { MultiplayerVRMWorldProps } from '../types/components';
+import ParticipantsList from './ParticipantsList';
 
 /**
  * 멀티플레이어 VRM 월드
@@ -27,6 +28,7 @@ export default function MultiplayerVRMWorld({
   myModelPath,
   nickname,
   serverUrl,
+  roomId,
   width = 1920,
   height = 1080,
   className = '',
@@ -43,6 +45,9 @@ export default function MultiplayerVRMWorld({
   // 다른 사용자들의 VRM 아바타
   const otherVRMsRef = useRef<Map<string, VRM>>(new Map());
 
+  // 로딩 중인 VRM 추적 (중복 로드 방지)
+  const loadingVRMsRef = useRef<Set<string>>(new Set());
+
   // 커스텀 훅들
   const faceTracking = useFaceTracking();
   const expression = useExpressionMapping(faceTracking.landmarks);
@@ -54,6 +59,36 @@ export default function MultiplayerVRMWorld({
     bounds: { minX: -100, maxX: 100, minZ: -100, maxZ: 100 },
   });
 
+  // Controls를 ref로 유지하여 애니메이션 루프에서 최신값 참조
+  const controlsRef = useRef(controls);
+  useEffect(() => {
+    controlsRef.current = controls;
+  }, [controls]);
+
+  // Network를 ref로 유지하여 애니메이션 루프에서 최신값 참조
+  const networkRef = useRef(network);
+  useEffect(() => {
+    networkRef.current = network;
+
+    // 디버그: otherUsers 변경 감지
+    if (network.otherUsers.size > 0) {
+      console.log(
+        '[MultiplayerVRMWorld] otherUsers 업데이트:',
+        network.otherUsers.size,
+        '명'
+      );
+      network.otherUsers.forEach((user, id) => {
+        console.log(`  - ${user.nickname} (${id.slice(0, 6)}):`, user.position);
+      });
+    }
+  }, [network]);
+
+  // Expression를 ref로 유지
+  const expressionRef = useRef(expression);
+  useEffect(() => {
+    expressionRef.current = expression;
+  }, [expression]);
+
   const [isLoading, setIsLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
 
@@ -64,6 +99,10 @@ export default function MultiplayerVRMWorld({
     if (!canvasRef.current) return;
 
     console.log('[World] Three.js 씬 초기화');
+
+    // Cleanup을 위한 ref 스냅샷
+    const otherVRMs = otherVRMsRef.current;
+    const loadingVRMs = loadingVRMsRef.current;
 
     // 씬 생성
     const scene = new THREE.Scene();
@@ -84,6 +123,7 @@ export default function MultiplayerVRMWorld({
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.autoClear = true; // 자동으로 프레임 클리어
     rendererRef.current = renderer;
 
     // 조명
@@ -107,19 +147,22 @@ export default function MultiplayerVRMWorld({
       const camera = cameraRef.current;
       const renderer = rendererRef.current;
       const myVRM = myVRMRef.current;
+      const currentControls = controlsRef.current;
+      const currentNetwork = networkRef.current;
+      const currentExpression = expressionRef.current;
 
       if (!scene || !camera || !renderer) return;
 
       // 내 아바타 업데이트
       if (myVRM) {
-        // 위치 업데이트
-        myVRM.scene.position.copy(controls.movement.position);
-        myVRM.scene.quaternion.copy(controls.movement.rotation);
+        // 위치 업데이트 (최신 controls 값 사용)
+        myVRM.scene.position.copy(currentControls.movement.position);
+        myVRM.scene.quaternion.copy(currentControls.movement.rotation);
 
         // 표정 업데이트
         if (myVRM.expressionManager) {
           // 모든 표정 초기화
-          Object.keys(expression.values).forEach((name) => {
+          Object.keys(currentExpression.values).forEach((name) => {
             try {
               myVRM.expressionManager?.setValue(name, 0);
             } catch {
@@ -128,7 +171,7 @@ export default function MultiplayerVRMWorld({
           });
 
           // 현재 표정 적용
-          Object.entries(expression.values).forEach(([name, value]) => {
+          Object.entries(currentExpression.values).forEach(([name, value]) => {
             if (value > 0) {
               try {
                 myVRM.expressionManager?.setValue(name, value);
@@ -157,12 +200,39 @@ export default function MultiplayerVRMWorld({
       }
 
       // 다른 사용자들 업데이트
-      network.otherUsers.forEach((user, userId) => {
+      if (currentNetwork.otherUsers.size > 0 && Math.random() < 0.016) {
+        console.log(
+          '[World] 다른 사용자 수:',
+          currentNetwork.otherUsers.size,
+          '로드된 VRM:',
+          otherVRMsRef.current.size
+        );
+      }
+
+      currentNetwork.otherUsers.forEach((user, userId) => {
         const vrm = otherVRMsRef.current.get(userId);
-        if (!vrm) return;
+        if (!vrm) {
+          // VRM이 로드되지 않은 경우 - useEffect에서 로드됨
+          return;
+        }
+
+        // 디버그: VRM 위치 업데이트 확인 (초당 1회)
+        if (Math.random() < 0.016) {
+          console.log(`[World] ${user.nickname} VRM 업데이트:`, {
+            current: {
+              x: vrm.scene.position.x.toFixed(1),
+              z: vrm.scene.position.z.toFixed(1),
+            },
+            target: {
+              x: user.position.x.toFixed(1),
+              z: user.position.z.toFixed(1),
+            },
+            visible: vrm.scene.visible,
+          });
+        }
 
         // 거리 기반 컬링
-        const distance = controls.movement.position.distanceTo(
+        const distance = currentControls.movement.position.distanceTo(
           new THREE.Vector3(user.position.x, user.position.y, user.position.z)
         );
 
@@ -174,10 +244,12 @@ export default function MultiplayerVRMWorld({
         vrm.scene.visible = true;
 
         // 위치 보간 (부드러운 이동)
-        vrm.scene.position.lerp(
-          new THREE.Vector3(user.position.x, user.position.y, user.position.z),
-          0.2
+        const targetPosition = new THREE.Vector3(
+          user.position.x,
+          user.position.y,
+          user.position.z
         );
+        vrm.scene.position.lerp(targetPosition, 0.2);
 
         // 회전 보간
         const targetQuat = new THREE.Quaternion(
@@ -211,13 +283,14 @@ export default function MultiplayerVRMWorld({
 
       // 카메라 위치 (3인칭 뷰)
       camera.position.set(
-        controls.movement.position.x,
-        controls.movement.position.y + 1.6,
-        controls.movement.position.z + 5
+        currentControls.movement.position.x,
+        currentControls.movement.position.y + 1.6,
+        currentControls.movement.position.z + 5
       );
-      camera.lookAt(controls.movement.position);
+      camera.lookAt(currentControls.movement.position);
 
-      // 렌더링
+      // 렌더링 (명시적 클리어)
+      renderer.clear();
       renderer.render(scene, camera);
 
       requestAnimationFrame(animationLoop);
@@ -227,6 +300,16 @@ export default function MultiplayerVRMWorld({
 
     return () => {
       // 정리
+      console.log('[World] 컴포넌트 언마운트, 리소스 정리');
+
+      // 모든 다른 사용자 VRM 제거
+      otherVRMs.forEach((vrm, userId) => {
+        scene.remove(vrm.scene);
+        console.log('[World] VRM 제거:', userId);
+      });
+      otherVRMs.clear();
+      loadingVRMs.clear();
+
       renderer.dispose();
       scene.clear();
     };
@@ -271,14 +354,24 @@ export default function MultiplayerVRMWorld({
   }
 
   /**
-   * 다른 사용자 VRM 로드
+   * 다른 사용자 VRM 로드 (씬에 추가는 호출자가 수행)
    */
   async function loadOtherVRM(
     userId: string,
     modelPath: string
   ): Promise<VRM | null> {
+    // 이미 로딩 중이거나 로드됨
+    if (
+      loadingVRMsRef.current.has(userId) ||
+      otherVRMsRef.current.has(userId)
+    ) {
+      console.log('[World] VRM 이미 로딩 중 또는 로드됨:', userId);
+      return null;
+    }
+
     try {
-      console.log('[World] 다른 사용자 VRM 로드:', userId, modelPath);
+      loadingVRMsRef.current.add(userId);
+      console.log('[World] 다른 사용자 VRM 로드 시작:', userId, modelPath);
 
       const loader = new GLTFLoader();
       loader.register((parser) => new VRMLoaderPlugin(parser));
@@ -294,15 +387,13 @@ export default function MultiplayerVRMWorld({
       VRMUtils.removeUnnecessaryVertices(gltf.scene);
       VRMUtils.removeUnnecessaryJoints(gltf.scene);
 
-      // 씬에 추가
-      if (sceneRef.current) {
-        sceneRef.current.add(vrm.scene);
-      }
-
+      console.log('[World] 다른 사용자 VRM 로드 완료:', userId);
       return vrm;
     } catch (error) {
       console.error('[World] 다른 사용자 VRM 로드 오류:', error);
       return null;
+    } finally {
+      loadingVRMsRef.current.delete(userId);
     }
   }
 
@@ -315,10 +406,22 @@ export default function MultiplayerVRMWorld({
 
     // 새 사용자 추가
     network.otherUsers.forEach((user, userId) => {
-      if (!otherVRMsRef.current.has(userId)) {
+      if (
+        !otherVRMsRef.current.has(userId) &&
+        !loadingVRMsRef.current.has(userId)
+      ) {
+        console.log(
+          '[World] 새 사용자 감지, VRM 로드 시작:',
+          user.nickname,
+          userId
+        );
+
         loadOtherVRM(userId, user.modelPath).then((vrm) => {
-          if (vrm) {
+          if (vrm && sceneRef.current) {
+            // VRM을 맵에 저장하고 씬에 추가
             otherVRMsRef.current.set(userId, vrm);
+            sceneRef.current.add(vrm.scene);
+            console.log('[World] VRM 씬에 추가 완료:', user.nickname, userId);
           }
         });
       }
@@ -327,9 +430,10 @@ export default function MultiplayerVRMWorld({
     // 퇴장한 사용자 제거
     otherVRMsRef.current.forEach((vrm, userId) => {
       if (!network.otherUsers.has(userId)) {
+        console.log('[World] 사용자 퇴장, VRM 제거:', userId);
         scene.remove(vrm.scene);
         otherVRMsRef.current.delete(userId);
-        console.log('[World] 사용자 제거:', userId);
+        loadingVRMsRef.current.delete(userId);
       }
     });
   }, [network.otherUsers]);
@@ -349,38 +453,143 @@ export default function MultiplayerVRMWorld({
   }, [network.isConnected, faceTracking.isReady, faceTracking.isTracking]);
 
   /**
-   * 내 상태 업데이트 전송
+   * 내 상태 업데이트 전송 (10Hz)
    */
   useEffect(() => {
     if (!network.isConnected) return;
 
-    network.updateMyState({
-      position: controls.movement.position,
-      rotation: controls.movement.rotation,
-      expression: expression.name,
-      blinkLeft: expression.values.blinkLeft,
-      blinkRight: expression.values.blinkRight,
-      mood: expression.mood,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const updateInterval = setInterval(() => {
+      const currentControls = controlsRef.current;
+      network.updateMyState({
+        position: currentControls.movement.position,
+        rotation: currentControls.movement.rotation,
+        expression: expression.name,
+        blinkLeft: expression.values.blinkLeft,
+        blinkRight: expression.values.blinkRight,
+        mood: expression.mood,
+      });
+    }, 100); // 10Hz (100ms)
+
+    return () => clearInterval(updateInterval);
+  }, [network, expression]);
+
+  /**
+   * 자신을 포함한 전체 참여자 목록 (메모이제이션)
+   * timestamp는 제외하여 불필요한 리렌더링 방지
+   */
+  const allUsers = useMemo(() => {
+    const all = new Map(network.otherUsers);
+    if (network.myUserId && myVRMRef.current) {
+      all.set(network.myUserId, {
+        id: network.myUserId,
+        position: {
+          x: controls.movement.position.x,
+          y: controls.movement.position.y,
+          z: controls.movement.position.z,
+        },
+        rotation: {
+          x: controls.movement.rotation.x,
+          y: controls.movement.rotation.y,
+          z: controls.movement.rotation.z,
+          w: controls.movement.rotation.w,
+        },
+        expression: {
+          current: expression.name,
+          blinkLeft: expression.values.blinkLeft,
+          blinkRight: expression.values.blinkRight,
+          mood: expression.mood,
+        },
+        modelPath: myModelPath,
+        nickname: nickname,
+        timestamp: 0, // ParticipantsList에서 timestamp는 사용하지 않으므로 고정값
+      });
+    }
+    return all;
   }, [
-    network.isConnected,
-    controls.movement.position,
-    controls.movement.rotation,
-    expression,
+    network.otherUsers,
+    network.myUserId,
+    controls.movement.position.x,
+    controls.movement.position.y,
+    controls.movement.position.z,
+    controls.movement.rotation.x,
+    controls.movement.rotation.y,
+    controls.movement.rotation.z,
+    controls.movement.rotation.w,
+    expression.name,
+    expression.values.blinkLeft,
+    expression.values.blinkRight,
+    expression.mood,
+    myModelPath,
+    nickname,
   ]);
+
+  /**
+   * 내 위치 (메모이제이션)
+   */
+  const myPosition = useMemo(
+    () => ({
+      x: controls.movement.position.x,
+      y: controls.movement.position.y,
+      z: controls.movement.position.z,
+    }),
+    [
+      controls.movement.position.x,
+      controls.movement.position.y,
+      controls.movement.position.z,
+    ]
+  );
 
   /**
    * 서버 연결
    */
   function handleConnect() {
-    network.connect(myModelPath, nickname);
+    network.connect(myModelPath, nickname, roomId);
   }
 
   return (
     <div className={`relative ${className}`}>
       {/* 3D 캔버스 */}
       <canvas ref={canvasRef} width={width} height={height} className="block" />
+
+      {/* 참여자 목록 */}
+      {network.isConnected && (
+        <ParticipantsList
+          users={allUsers}
+          myUserId={network.myUserId || undefined}
+          myPosition={myPosition}
+        />
+      )}
+
+      {/* 디버그 정보 */}
+      {network.isConnected && (
+        <div className="absolute top-4 right-4 bg-black/50 backdrop-blur-sm text-white px-3 py-2 rounded-lg text-xs font-mono space-y-1">
+          <div>내 ID: {network.myUserId?.slice(0, 6)}</div>
+          <div>총 사용자: {network.otherUsers.size + 1}명</div>
+          <div>
+            위치: ({controls.movement.position.x.toFixed(1)},{' '}
+            {controls.movement.position.z.toFixed(1)})
+          </div>
+          <div>
+            키 입력: {controls.input.forward && 'W'}
+            {controls.input.left && 'A'}
+            {controls.input.backward && 'S'}
+            {controls.input.right && 'D'}
+            {controls.input.shift && ' Shift'}
+          </div>
+          <div className="border-t border-white/30 pt-1 mt-1">
+            <div className="text-gray-300">다른 사용자:</div>
+            {Array.from(network.otherUsers.entries()).map(([id, user]) => (
+              <div key={id} className="text-[10px]">
+                {user.nickname}: ({user.position.x.toFixed(1)},{' '}
+                {user.position.z.toFixed(1)})
+              </div>
+            ))}
+            {network.otherUsers.size === 0 && (
+              <div className="text-gray-400 text-[10px]">없음</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 로딩 오버레이 */}
       {isLoading && (

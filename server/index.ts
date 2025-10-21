@@ -39,12 +39,20 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   pingInterval: 25000,
 });
 
-// 사용자 상태 저장소
-const users = new Map<string, UserState>();
+// 룸별 사용자 관리
+interface RoomData {
+  users: Map<string, UserState>;
+  createdAt: number;
+  lastActivity: number;
+}
 
-// Rate limiting: 각 소켓당 마지막 업데이트 시간 추적
+const rooms = new Map<string, RoomData>();
+const socketToRoom = new Map<string, string>(); // socket.id -> roomId
+const socketToUser = new Map<string, string>(); // socket.id -> userId
+
+// Rate limiting
 const lastUpdateTime = new Map<string, number>();
-const UPDATE_RATE_LIMIT = 100; // 최소 100ms 간격 (10Hz)
+const UPDATE_RATE_LIMIT = 100; // 10Hz
 
 /**
  * 클라이언트 연결 처리
@@ -57,17 +65,36 @@ io.on(
     let userId: string | null = null;
 
     /**
-     * 월드 접속 처리
+     * 룸 접속 처리
      */
     socket.on('join', (data) => {
       try {
-        // UUID 생성
+        const roomId = data.roomId || 'default';
         userId = uuidv4();
 
-        // 초기 사용자 상태 생성
+        // 룸이 없으면 생성
+        if (!rooms.has(roomId)) {
+          rooms.set(roomId, {
+            users: new Map(),
+            createdAt: Date.now(),
+            lastActivity: Date.now(),
+          });
+          console.log(`[룸 생성] ${roomId}`);
+        }
+
+        const room = rooms.get(roomId)!;
+        room.lastActivity = Date.now();
+
+        // 스폰 지점 랜덤 배치 (같은 위치에 겹치지 않도록)
+        const spawnRadius = 3;
+        const angle = Math.random() * Math.PI * 2;
+        const spawnX = Math.cos(angle) * spawnRadius;
+        const spawnZ = Math.sin(angle) * spawnRadius;
+
+        // 사용자 상태 생성
         const newUser: UserState = {
           id: userId,
-          position: { x: 0, y: 0, z: 0 }, // 스폰 지점
+          position: { x: spawnX, y: 0, z: spawnZ },
           rotation: { x: 0, y: 0, z: 0, w: 1 },
           expression: {
             current: 'neutral',
@@ -80,18 +107,23 @@ io.on(
           timestamp: Date.now(),
         };
 
-        // 사용자 저장
-        users.set(userId, newUser);
+        // 룸에 사용자 추가
+        room.users.set(userId, newUser);
+        socketToRoom.set(socket.id, roomId);
+        socketToUser.set(socket.id, userId);
+
+        // 소켓을 룸에 join
+        socket.join(roomId);
 
         console.log(
-          `[접속] ${newUser.nickname} (${userId}) - 총 ${users.size}명`
+          `[접속] ${newUser.nickname} → 룸 "${roomId}" (총 ${room.users.size}명)`
         );
 
-        // 1. 새 사용자에게 현재 월드 상태 전송 (스냅샷)
-        socket.emit('snapshot', Array.from(users.values()));
+        // 1. 새 사용자에게 현재 룸 상태 전송
+        socket.emit('snapshot', Array.from(room.users.values()));
 
-        // 2. 다른 사용자들에게 새 사용자 입장 알림
-        socket.broadcast.emit('user_joined', newUser);
+        // 2. 같은 룸의 다른 사용자들에게 입장 알림
+        socket.to(roomId).emit('user_joined', newUser);
       } catch (error) {
         console.error('[에러] join 처리 중 오류:', error);
         socket.emit('error', '접속 처리 중 오류가 발생했습니다.');
@@ -108,19 +140,22 @@ io.on(
       }
 
       try {
-        // Rate limiting 체크
         const now = Date.now();
         const lastUpdate = lastUpdateTime.get(socket.id) || 0;
 
         if (now - lastUpdate < UPDATE_RATE_LIMIT) {
-          // 너무 빠른 업데이트는 무시
           return;
         }
 
         lastUpdateTime.set(socket.id, now);
 
-        // 사용자 상태 업데이트
-        const user = users.get(userId);
+        const roomId = socketToRoom.get(socket.id);
+        if (!roomId) return;
+
+        const room = rooms.get(roomId);
+        if (!room) return;
+
+        const user = room.users.get(userId);
         if (user) {
           user.position = {
             x: payload.pos[0],
@@ -140,9 +175,17 @@ io.on(
             mood: payload.mood,
           };
           user.timestamp = now;
+          room.lastActivity = now;
 
-          // 다른 모든 사용자에게 브로드캐스트
-          socket.broadcast.emit('user_update', payload);
+          // 같은 룸의 다른 사용자들에게만 브로드캐스트
+          socket.to(roomId).emit('user_update', payload);
+
+          // 디버그: 업데이트 브로드캐스트 확인 (초당 1회)
+          if (Math.random() < 0.1) {
+            console.log(
+              `[업데이트] ${user.nickname} → 룸 "${roomId}" (${room.users.size - 1}명에게)`
+            );
+          }
         }
       } catch (error) {
         console.error('[에러] update 처리 중 오류:', error);
@@ -168,19 +211,30 @@ io.on(
      */
     function handleDisconnect() {
       if (userId) {
-        const user = users.get(userId);
-        if (user) {
-          console.log(
-            `[퇴장] ${user.nickname} (${userId}) - 남은 인원: ${users.size - 1}명`
-          );
+        const roomId = socketToRoom.get(socket.id);
+        if (roomId) {
+          const room = rooms.get(roomId);
+          if (room) {
+            const user = room.users.get(userId);
+            if (user) {
+              console.log(
+                `[퇴장] ${user.nickname} ← 룸 "${roomId}" (남은 ${room.users.size - 1}명)`
+              );
 
-          // 사용자 제거
-          users.delete(userId);
-          lastUpdateTime.delete(socket.id);
+              // 사용자 제거
+              room.users.delete(userId);
+              room.lastActivity = Date.now();
 
-          // 다른 사용자들에게 퇴장 알림
-          socket.broadcast.emit('user_left', userId);
+              // 같은 룸의 다른 사용자들에게 퇴장 알림
+              socket.to(roomId).emit('user_left', userId);
+
+              // 룸이 비었으면 5분 후 삭제 (타임아웃에서 처리)
+            }
+          }
+          socketToRoom.delete(socket.id);
         }
+        socketToUser.delete(socket.id);
+        lastUpdateTime.delete(socket.id);
       }
       console.log(`[연결 끊김] ${socket.id}`);
     }
@@ -191,11 +245,29 @@ io.on(
  * 헬스 체크 엔드포인트
  */
 app.get('/health', (req, res) => {
+  const totalUsers = Array.from(rooms.values()).reduce(
+    (sum, room) => sum + room.users.size,
+    0
+  );
   res.json({
     status: 'ok',
-    users: users.size,
+    rooms: rooms.size,
+    totalUsers,
     timestamp: new Date().toISOString(),
   });
+});
+
+/**
+ * 룸 목록 조회
+ */
+app.get('/rooms', (req, res) => {
+  const roomList = Array.from(rooms.entries()).map(([id, data]) => ({
+    id,
+    userCount: data.users.size,
+    createdAt: new Date(data.createdAt).toISOString(),
+    lastActivity: new Date(data.lastActivity).toISOString(),
+  }));
+  res.json(roomList);
 });
 
 /**
@@ -214,18 +286,32 @@ httpServer.listen(PORT, () => {
 
 /**
  * 주기적인 정리 작업 (5분마다)
- * 오래된 연결이나 좀비 세션 제거
  */
 setInterval(
   () => {
     const now = Date.now();
-    const TIMEOUT = 5 * 60 * 1000; // 5분
+    const USER_TIMEOUT = 5 * 60 * 1000; // 5분
+    const EMPTY_ROOM_TIMEOUT = 30 * 60 * 1000; // 30분
 
-    users.forEach((user, id) => {
-      if (now - user.timestamp > TIMEOUT) {
-        console.log(`[타임아웃] ${user.nickname} (${id}) - 비활성 세션 제거`);
-        users.delete(id);
-        io.emit('user_left', id);
+    rooms.forEach((room, roomId) => {
+      // 비활성 사용자 제거
+      room.users.forEach((user, userId) => {
+        if (now - user.timestamp > USER_TIMEOUT) {
+          console.log(
+            `[타임아웃] ${user.nickname} (룸: ${roomId}) - 비활성 세션 제거`
+          );
+          room.users.delete(userId);
+          io.to(roomId).emit('user_left', userId);
+        }
+      });
+
+      // 빈 룸 제거 (30분 이상 비활성)
+      if (
+        room.users.size === 0 &&
+        now - room.lastActivity > EMPTY_ROOM_TIMEOUT
+      ) {
+        console.log(`[룸 삭제] "${roomId}" - 비활성 빈 룸 제거`);
+        rooms.delete(roomId);
       }
     });
   },

@@ -114,31 +114,34 @@ export function useControls(
 
   /**
    * 키보드 이벤트 리스너
+   * e.code 사용으로 한글/영문 입력 모드와 무관하게 작동
    */
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const key = e.key.toLowerCase();
+      // e.code로 물리적 키 위치 감지 (한영 상태 무관)
+      const code = e.code;
 
       setInput((prev) => {
         const next = { ...prev };
 
-        switch (key) {
-          case 'w':
+        switch (code) {
+          case 'KeyW':
             next.forward = true;
             break;
-          case 's':
+          case 'KeyS':
             next.backward = true;
             break;
-          case 'a':
+          case 'KeyA':
             next.left = true;
             break;
-          case 'd':
+          case 'KeyD':
             next.right = true;
             break;
-          case 'shift':
+          case 'ShiftLeft':
+          case 'ShiftRight':
             next.shift = true;
             break;
-          case ' ':
+          case 'Space':
             next.space = true;
             break;
         }
@@ -148,28 +151,29 @@ export function useControls(
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      const key = e.key.toLowerCase();
+      const code = e.code;
 
       setInput((prev) => {
         const next = { ...prev };
 
-        switch (key) {
-          case 'w':
+        switch (code) {
+          case 'KeyW':
             next.forward = false;
             break;
-          case 's':
+          case 'KeyS':
             next.backward = false;
             break;
-          case 'a':
+          case 'KeyA':
             next.left = false;
             break;
-          case 'd':
+          case 'KeyD':
             next.right = false;
             break;
-          case 'shift':
+          case 'ShiftLeft':
+          case 'ShiftRight':
             next.shift = false;
             break;
-          case ' ':
+          case 'Space':
             next.space = false;
             break;
         }
@@ -178,12 +182,13 @@ export function useControls(
       });
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
+    // document에 capture phase로 등록 (다른 요소보다 먼저 처리)
+    document.addEventListener('keydown', handleKeyDown, true);
+    document.addEventListener('keyup', handleKeyUp, true);
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
+      document.removeEventListener('keydown', handleKeyDown, true);
+      document.removeEventListener('keyup', handleKeyUp, true);
     };
   }, []);
 

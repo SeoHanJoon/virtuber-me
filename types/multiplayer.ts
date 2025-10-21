@@ -94,13 +94,17 @@ export interface ServerToClientEvents {
  * 클라이언트 -> 서버 이벤트
  */
 export interface ClientToServerEvents {
-  // 월드 접속
-  join: (data: { modelPath: string; nickname?: string }) => void;
+  // 룸 접속
+  join: (data: {
+    roomId?: string;
+    modelPath: string;
+    nickname?: string;
+  }) => void;
 
   // 상태 업데이트
   update: (payload: UpdatePayload) => void;
 
-  // 명시적 퇴장 (옵션)
+  // 명시적 퇴장
   leave: () => void;
 }
 
