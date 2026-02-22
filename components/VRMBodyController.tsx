@@ -52,7 +52,6 @@ export function VRMBodyController({
 
   const [isVRMLoaded, setIsVRMLoaded] = useState(false);
   const baseOffsetsRef = useRef<BoneBaseOffsets | null>(null);
-  const logCounterRef = useRef(0);
 
   const {
     bodyState,
@@ -276,19 +275,6 @@ export function VRMBodyController({
           // baseOffset에 targetQuaternion을 상대적으로 적용
           const finalRotation = baseOffset.clone().multiply(targetQuaternion);
 
-          // 디버깅: 100프레임마다 로그 출력
-          if (
-            logCounterRef.current === 0 &&
-            boneName === VRMHumanBoneName.LeftUpperArm
-          ) {
-            console.log('[VRMBodyController] 회전 적용:', {
-              boneName,
-              targetQuat: targetQuaternion,
-              baseOffset,
-              finalRotation,
-            });
-          }
-
           // Slerp 보간으로 부드럽게 회전 적용
           bone.quaternion.slerp(finalRotation, slerpAmount);
         }
@@ -315,8 +301,6 @@ export function VRMBodyController({
         state.rightLowerArm,
         baseOffsets.rightLowerArm
       );
-
-      logCounterRef.current = (logCounterRef.current + 1) % 100;
     },
     [trackingOptions?.slerpAmount]
   );
@@ -363,22 +347,6 @@ export function VRMBodyController({
    * 트래킹이 활성화되었을 때만 적용
    */
   useEffect(() => {
-    // 디버깅: 상태 확인 (0.2% 확률 - 드물게)
-    if (Math.random() < 0.002) {
-      console.log('[VRMBodyController] bodyState 업데이트 확인:', {
-        isVRMLoaded,
-        hasBodyState: !!bodyState,
-        isTrackingActive,
-        isBodyTrackingReady,
-        bodyState: bodyState
-          ? {
-              leftUpperArm: bodyState.leftUpperArm,
-              rightUpperArm: bodyState.rightUpperArm,
-            }
-          : null,
-      });
-    }
-
     if (isVRMLoaded && bodyState && isTrackingActive) {
       applyBodyStateToVRM(bodyState);
     }

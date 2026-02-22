@@ -37,15 +37,21 @@ export default function FaceTrackingVRMViewer({
 
   // 상태 관리
   const [error, setError] = useState<string | null>(null);
-  const [enableBodyTracking, setEnableBodyTracking] = useState(false);
-  const [enableHandTracking, setEnableHandTracking] = useState(false);
-  const [internalShowLandmarks, setInternalShowLandmarks] = useState(false);
-  const showLandmarks = externalShowLandmarks ?? internalShowLandmarks;
-  const [showBlendShapes, setShowBlendShapes] = useState(false);
   const [isFaceLandmarkerReady, setIsFaceLandmarkerReady] = useState(false);
   const [isVRMLoaded, setIsVRMLoaded] = useState(false);
   const [blendShapesData, setBlendShapesData] =
     useState<BlendShapesData | null>(null);
+
+  // 트래킹 옵션 (관련 상태 그룹화)
+  const [trackingOptions, setTrackingOptions] = useState({
+    body: false,
+    hand: false,
+    showLandmarks: false,
+    showBlendShapes: false,
+  });
+  const showLandmarks = externalShowLandmarks ?? trackingOptions.showLandmarks;
+
+  // 랜드마크 데이터
   const [currentLandmarks, setCurrentLandmarks] = useState<Array<{
     x: number;
     y: number;
@@ -56,6 +62,8 @@ export default function FaceTrackingVRMViewer({
     y: number;
     z: number;
   }> | null>(null);
+
+  // 표정 설정
   const [expressionMultipliers, setExpressionMultipliers] =
     useState<ExpressionMultipliers>({
       mouthOpen: 1.0,
@@ -65,10 +73,12 @@ export default function FaceTrackingVRMViewer({
       eyeLook: 1.0,
     });
 
-  // 모델 변형 설정 (내부 state로 관리)
-  const [mirrorMode, setMirrorMode] = useState(initialMirrorMode);
-  const [rotateModel, setRotateModel] = useState(initialRotateModel);
-  const [invertPitch, setInvertPitch] = useState(initialInvertPitch);
+  // 모델 변형 설정 (관련 상태 그룹화)
+  const [transforms, setTransforms] = useState({
+    mirror: initialMirrorMode,
+    rotate: initialRotateModel,
+    invertPitch: initialInvertPitch,
+  });
 
   // Calculator 인스턴스
   const faceCalculatorRef = useRef(
@@ -86,8 +96,8 @@ export default function FaceTrackingVRMViewer({
     useMediaPipeLandmarkers({
       isWebcamReady,
       enableFace: true,
-      enableBody: enableBodyTracking,
-      enableHand: enableHandTracking,
+      enableBody: trackingOptions.body,
+      enableHand: trackingOptions.hand,
       onFaceReady: () => setIsFaceLandmarkerReady(true),
     });
 
@@ -96,8 +106,8 @@ export default function FaceTrackingVRMViewer({
     modelPath,
     width,
     height,
-    mirrorMode,
-    rotateModel,
+    mirrorMode: transforms.mirror,
+    rotateModel: transforms.rotate,
     onError: setError,
     onVRMLoaded: () => {
       setIsVRMLoaded(true);
@@ -112,11 +122,7 @@ export default function FaceTrackingVRMViewer({
 
   // 애니메이션 루프
   useEffect(() => {
-    // VRM과 렌더러가 준비될 때까지 대기
     if (!isVRMLoaded || !isWebcamReady) {
-      console.log(
-        `[Animation] 대기 중... VRM: ${isVRMLoaded}, Webcam: ${isWebcamReady}`
-      );
       return;
     }
 
@@ -126,11 +132,8 @@ export default function FaceTrackingVRMViewer({
       !sceneRef.current ||
       !cameraRef.current
     ) {
-      console.log('[Animation] Ref 준비 중...');
       return;
     }
-
-    console.log('[Animation] 애니메이션 루프 시작');
 
     const clock = new THREE.Clock();
     let lastVideoTime = -1;
@@ -171,7 +174,7 @@ export default function FaceTrackingVRMViewer({
                 vrmRef.current,
                 result.faceLandmarks[0],
                 faceCalculatorRef.current,
-                invertPitch
+                transforms.invertPitch
               );
 
               // 시각화를 위해 랜드마크 저장
@@ -191,7 +194,7 @@ export default function FaceTrackingVRMViewer({
         if (
           poseLandmarkerRef.current &&
           videoRef.current &&
-          enableBodyTracking &&
+          trackingOptions.body &&
           !manualControlEnabled
         ) {
           try {
@@ -232,7 +235,7 @@ export default function FaceTrackingVRMViewer({
         if (
           handLandmarkerRef.current &&
           videoRef.current &&
-          enableHandTracking &&
+          trackingOptions.hand &&
           !manualControlEnabled
         ) {
           try {
@@ -274,15 +277,14 @@ export default function FaceTrackingVRMViewer({
     animate();
 
     return () => {
-      console.log('[Animation] 애니메이션 루프 정리');
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
   }, [
-    isVRMLoaded, // VRM 로드 완료 감지 🆕
-    isWebcamReady, // 웹캠 준비 완료 감지 🆕
-    isFaceLandmarkerReady, // Face Landmarker 준비 완료 감지 🆕
+    isVRMLoaded,
+    isWebcamReady,
+    isFaceLandmarkerReady,
     vrmRef,
     rendererRef,
     sceneRef,
@@ -291,10 +293,10 @@ export default function FaceTrackingVRMViewer({
     faceLandmarkerRef,
     poseLandmarkerRef,
     handLandmarkerRef,
-    invertPitch,
-    enableBodyTracking,
-    enableHandTracking,
-    manualControlEnabled, // 수동 제어 모드 🆕
+    transforms.invertPitch,
+    trackingOptions.body,
+    trackingOptions.hand,
+    manualControlEnabled,
   ]);
 
   // 표정 강도 변경 핸들러
@@ -358,28 +360,41 @@ export default function FaceTrackingVRMViewer({
       <ExpressionSettingsPanel
         multipliers={expressionMultipliers}
         onMultiplierChange={handleMultiplierChange}
-        enableBodyTracking={enableBodyTracking}
-        onBodyTrackingChange={setEnableBodyTracking}
-        enableHandTracking={enableHandTracking}
-        onHandTrackingChange={setEnableHandTracking}
+        enableBodyTracking={trackingOptions.body}
+        onBodyTrackingChange={(v) =>
+          setTrackingOptions((prev) => ({ ...prev, body: v }))
+        }
+        enableHandTracking={trackingOptions.hand}
+        onHandTrackingChange={(v) =>
+          setTrackingOptions((prev) => ({ ...prev, hand: v }))
+        }
         showLandmarks={
           externalShowLandmarks !== undefined
             ? showLandmarks
-            : internalShowLandmarks
+            : trackingOptions.showLandmarks
         }
         onShowLandmarksChange={
           externalShowLandmarks !== undefined
             ? undefined
-            : setInternalShowLandmarks
+            : (v) =>
+                setTrackingOptions((prev) => ({ ...prev, showLandmarks: v }))
         }
-        mirrorMode={mirrorMode}
-        onMirrorModeChange={setMirrorMode}
-        rotateModel={rotateModel}
-        onRotateModelChange={setRotateModel}
-        invertPitch={invertPitch}
-        onInvertPitchChange={setInvertPitch}
-        showBlendShapes={showBlendShapes}
-        onShowBlendShapesChange={setShowBlendShapes}
+        mirrorMode={transforms.mirror}
+        onMirrorModeChange={(v) =>
+          setTransforms((prev) => ({ ...prev, mirror: v }))
+        }
+        rotateModel={transforms.rotate}
+        onRotateModelChange={(v) =>
+          setTransforms((prev) => ({ ...prev, rotate: v }))
+        }
+        invertPitch={transforms.invertPitch}
+        onInvertPitchChange={(v) =>
+          setTransforms((prev) => ({ ...prev, invertPitch: v }))
+        }
+        showBlendShapes={trackingOptions.showBlendShapes}
+        onShowBlendShapesChange={(v) =>
+          setTrackingOptions((prev) => ({ ...prev, showBlendShapes: v }))
+        }
         blendShapesData={blendShapesData}
         onReset={handleReset}
       />

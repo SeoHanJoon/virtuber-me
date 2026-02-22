@@ -12,8 +12,8 @@
 
 import { useEffect, useRef, useState, useMemo } from 'react';
 import * as THREE from 'three';
-import { VRM, VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { VRM } from '@pixiv/three-vrm';
+import { loadVRM } from '../utils/vrmLoader';
 import { useFaceTracking } from '../hooks/useFaceTracking';
 import { useExpressionMapping } from '../hooks/useExpressionMapping';
 import { useNetworkSync } from '../hooks/useNetworkSync';
@@ -69,18 +69,6 @@ export default function MultiplayerVRMWorld({
   const networkRef = useRef(network);
   useEffect(() => {
     networkRef.current = network;
-
-    // 디버그: otherUsers 변경 감지
-    if (network.otherUsers.size > 0) {
-      console.log(
-        '[MultiplayerVRMWorld] otherUsers 업데이트:',
-        network.otherUsers.size,
-        '명'
-      );
-      network.otherUsers.forEach((user, id) => {
-        console.log(`  - ${user.nickname} (${id.slice(0, 6)}):`, user.position);
-      });
-    }
   }, [network]);
 
   // Expression를 ref로 유지
@@ -97,8 +85,6 @@ export default function MultiplayerVRMWorld({
    */
   useEffect(() => {
     if (!canvasRef.current) return;
-
-    console.log('[World] Three.js 씬 초기화');
 
     // Cleanup을 위한 ref 스냅샷
     const otherVRMs = otherVRMsRef.current;
@@ -200,35 +186,11 @@ export default function MultiplayerVRMWorld({
       }
 
       // 다른 사용자들 업데이트
-      if (currentNetwork.otherUsers.size > 0 && Math.random() < 0.016) {
-        console.log(
-          '[World] 다른 사용자 수:',
-          currentNetwork.otherUsers.size,
-          '로드된 VRM:',
-          otherVRMsRef.current.size
-        );
-      }
-
       currentNetwork.otherUsers.forEach((user, userId) => {
         const vrm = otherVRMsRef.current.get(userId);
         if (!vrm) {
           // VRM이 로드되지 않은 경우 - useEffect에서 로드됨
           return;
-        }
-
-        // 디버그: VRM 위치 업데이트 확인 (초당 1회)
-        if (Math.random() < 0.016) {
-          console.log(`[World] ${user.nickname} VRM 업데이트:`, {
-            current: {
-              x: vrm.scene.position.x.toFixed(1),
-              z: vrm.scene.position.z.toFixed(1),
-            },
-            target: {
-              x: user.position.x.toFixed(1),
-              z: user.position.z.toFixed(1),
-            },
-            visible: vrm.scene.visible,
-          });
         }
 
         // 거리 기반 컬링
@@ -299,13 +261,9 @@ export default function MultiplayerVRMWorld({
     animationLoop();
 
     return () => {
-      // 정리
-      console.log('[World] 컴포넌트 언마운트, 리소스 정리');
-
       // 모든 다른 사용자 VRM 제거
-      otherVRMs.forEach((vrm, userId) => {
+      otherVRMs.forEach((vrm) => {
         scene.remove(vrm.scene);
-        console.log('[World] VRM 제거:', userId);
       });
       otherVRMs.clear();
       loadingVRMs.clear();
@@ -316,36 +274,12 @@ export default function MultiplayerVRMWorld({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myModelPath, width, height]);
 
-  /**
-   * 내 VRM 모델 로드
-   */
+  /** 내 VRM 모델 로드 */
   async function loadMyVRM(scene: THREE.Scene, modelPath: string) {
     try {
-      console.log('[World] 내 VRM 로드:', modelPath);
-
-      const loader = new GLTFLoader();
-      loader.register((parser) => new VRMLoaderPlugin(parser));
-
-      const gltf = await loader.loadAsync(modelPath, (progress) => {
-        const percent = (progress.loaded / progress.total) * 100;
-        setLoadingProgress(percent);
-      });
-
-      const vrm = gltf.userData.vrm as VRM;
-
-      if (!vrm) {
-        throw new Error('VRM 데이터를 찾을 수 없습니다.');
-      }
-
-      // 최적화
-      VRMUtils.removeUnnecessaryVertices(gltf.scene);
-      VRMUtils.removeUnnecessaryJoints(gltf.scene);
-
-      // 씬에 추가
+      const vrm = await loadVRM(modelPath, setLoadingProgress);
       scene.add(vrm.scene);
       myVRMRef.current = vrm;
-
-      console.log('[World] 내 VRM 로드 완료');
       setIsLoading(false);
     } catch (error) {
       console.error('[World] VRM 로드 오류:', error);
@@ -353,42 +287,21 @@ export default function MultiplayerVRMWorld({
     }
   }
 
-  /**
-   * 다른 사용자 VRM 로드 (씬에 추가는 호출자가 수행)
-   */
+  /** 다른 사용자 VRM 로드 */
   async function loadOtherVRM(
     userId: string,
     modelPath: string
   ): Promise<VRM | null> {
-    // 이미 로딩 중이거나 로드됨
     if (
       loadingVRMsRef.current.has(userId) ||
       otherVRMsRef.current.has(userId)
     ) {
-      console.log('[World] VRM 이미 로딩 중 또는 로드됨:', userId);
       return null;
     }
 
     try {
       loadingVRMsRef.current.add(userId);
-      console.log('[World] 다른 사용자 VRM 로드 시작:', userId, modelPath);
-
-      const loader = new GLTFLoader();
-      loader.register((parser) => new VRMLoaderPlugin(parser));
-
-      const gltf = await loader.loadAsync(modelPath);
-      const vrm = gltf.userData.vrm as VRM;
-
-      if (!vrm) {
-        throw new Error('VRM 데이터를 찾을 수 없습니다.');
-      }
-
-      // 최적화
-      VRMUtils.removeUnnecessaryVertices(gltf.scene);
-      VRMUtils.removeUnnecessaryJoints(gltf.scene);
-
-      console.log('[World] 다른 사용자 VRM 로드 완료:', userId);
-      return vrm;
+      return await loadVRM(modelPath);
     } catch (error) {
       console.error('[World] 다른 사용자 VRM 로드 오류:', error);
       return null;
@@ -410,18 +323,10 @@ export default function MultiplayerVRMWorld({
         !otherVRMsRef.current.has(userId) &&
         !loadingVRMsRef.current.has(userId)
       ) {
-        console.log(
-          '[World] 새 사용자 감지, VRM 로드 시작:',
-          user.nickname,
-          userId
-        );
-
         loadOtherVRM(userId, user.modelPath).then((vrm) => {
           if (vrm && sceneRef.current) {
-            // VRM을 맵에 저장하고 씬에 추가
             otherVRMsRef.current.set(userId, vrm);
             sceneRef.current.add(vrm.scene);
-            console.log('[World] VRM 씬에 추가 완료:', user.nickname, userId);
           }
         });
       }
@@ -430,7 +335,6 @@ export default function MultiplayerVRMWorld({
     // 퇴장한 사용자 제거
     otherVRMsRef.current.forEach((vrm, userId) => {
       if (!network.otherUsers.has(userId)) {
-        console.log('[World] 사용자 퇴장, VRM 제거:', userId);
         scene.remove(vrm.scene);
         otherVRMsRef.current.delete(userId);
         loadingVRMsRef.current.delete(userId);

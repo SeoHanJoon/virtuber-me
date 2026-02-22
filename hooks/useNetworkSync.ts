@@ -183,15 +183,6 @@ export function useNetworkSync(
               return prev;
             }
 
-            // 디버그: 위치 업데이트 확인 (초당 1회)
-            if (Math.random() < 0.1) {
-              console.log(`[Network] ${user.nickname} 위치 업데이트:`, {
-                x: payload.pos[0].toFixed(2),
-                y: payload.pos[1].toFixed(2),
-                z: payload.pos[2].toFixed(2),
-              });
-            }
-
             const next = new Map(prev);
             next.set(payload.id, {
               ...user,
