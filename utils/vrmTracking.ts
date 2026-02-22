@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { VRM, VRMExpressionPresetName } from '@pixiv/three-vrm';
 import { FaceStateCalculator, mapFaceStateToVRM } from './faceStateCalculator';
 import { BodyStateCalculator } from './bodyStateCalculator';
@@ -134,29 +135,36 @@ export function applyBodyTrackingToVRM(
   const bodyState = calculator.calculateBodyState(landmarks);
   if (!bodyState) return;
 
-  const smoothFactor = 0.2;
+  const smoothFactor = 0.3;
 
-  // 척추
+  // 척추 (x, y, z 모두 적용)
   const spine = vrm.humanoid.getNormalizedBoneNode('spine');
   if (spine) {
     spine.rotation.x += (bodyState.spine.x - spine.rotation.x) * smoothFactor;
+    spine.rotation.y += (bodyState.spine.y - spine.rotation.y) * smoothFactor;
     spine.rotation.z += (bodyState.spine.z - spine.rotation.z) * smoothFactor;
   }
 
-  // 가슴
+  // 가슴 (x, y, z 모두 적용)
   const chest = vrm.humanoid.getNormalizedBoneNode('chest');
   if (chest) {
     chest.rotation.x += (bodyState.chest.x - chest.rotation.x) * smoothFactor;
+    chest.rotation.y += (bodyState.chest.y - chest.rotation.y) * smoothFactor;
     chest.rotation.z += (bodyState.chest.z - chest.rotation.z) * smoothFactor;
   }
 
-  // 왼팔
+  // 왼팔 (Quaternion slerp으로 부드럽게 적용)
   const leftUpperArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
   if (leftUpperArm) {
-    leftUpperArm.rotation.x +=
-      (bodyState.leftUpperArm.x - leftUpperArm.rotation.x) * smoothFactor;
-    leftUpperArm.rotation.y +=
-      (bodyState.leftUpperArm.y - leftUpperArm.rotation.y) * smoothFactor;
+    const targetQ = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(
+        bodyState.leftUpperArm.x,
+        bodyState.leftUpperArm.y,
+        bodyState.leftUpperArm.z,
+        'XYZ'
+      )
+    );
+    leftUpperArm.quaternion.slerp(targetQ, smoothFactor);
   }
 
   const leftLowerArm = vrm.humanoid.getNormalizedBoneNode('leftLowerArm');
@@ -165,13 +173,18 @@ export function applyBodyTrackingToVRM(
       (bodyState.leftLowerArm.z - leftLowerArm.rotation.z) * smoothFactor;
   }
 
-  // 오른팔
+  // 오른팔 (Quaternion slerp으로 부드럽게 적용)
   const rightUpperArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
   if (rightUpperArm) {
-    rightUpperArm.rotation.x +=
-      (bodyState.rightUpperArm.x - rightUpperArm.rotation.x) * smoothFactor;
-    rightUpperArm.rotation.y +=
-      (bodyState.rightUpperArm.y - rightUpperArm.rotation.y) * smoothFactor;
+    const targetQ = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(
+        bodyState.rightUpperArm.x,
+        bodyState.rightUpperArm.y,
+        bodyState.rightUpperArm.z,
+        'XYZ'
+      )
+    );
+    rightUpperArm.quaternion.slerp(targetQ, smoothFactor);
   }
 
   const rightLowerArm = vrm.humanoid.getNormalizedBoneNode('rightLowerArm');

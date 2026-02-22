@@ -212,18 +212,29 @@ export default function FaceTrackingVRMViewer({
                       visibility?: number;
                     }>
                   >;
+                  worldLandmarks: Array<
+                    Array<{
+                      x: number;
+                      y: number;
+                      z: number;
+                      visibility?: number;
+                    }>
+                  >;
                 };
               }
             ).detectForVideo(videoRef.current, performance.now());
 
-            if (poseResult?.landmarks?.[0]) {
+            // 바디 트래킹에는 worldLandmarks 사용 (미터 단위 3D 좌표, Z 깊이 정확)
+            if (poseResult?.worldLandmarks?.[0]) {
               applyBodyTrackingToVRM(
                 vrmRef.current,
-                poseResult.landmarks[0],
+                poseResult.worldLandmarks[0],
                 bodyCalculatorRef.current
               );
+            }
 
-              // 시각화를 위해 Pose 랜드마크 저장
+            // 시각화에는 image landmarks 사용 (0-1 정규화 좌표)
+            if (poseResult?.landmarks?.[0]) {
               setCurrentPoseLandmarks(poseResult.landmarks[0]);
             }
           } catch {
