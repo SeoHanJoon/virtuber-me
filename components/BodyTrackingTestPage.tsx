@@ -91,15 +91,6 @@ export default function BodyTrackingTestPage() {
     const video = videoRef.current;
 
     if (!canvas || !video || !keypoints || keypoints.length === 0) {
-      // 디버깅
-      if (Math.random() < 0.01) {
-        console.log('[BodyTrackingTestPage] 랜드마크 그리기 스킵:', {
-          hasCanvas: !!canvas,
-          hasVideo: !!video,
-          hasKeypoints: !!keypoints,
-          keypointsLength: keypoints?.length || 0,
-        });
-      }
       return;
     }
 
@@ -111,16 +102,6 @@ export default function BodyTrackingTestPage() {
     const containerHeight = canvas.parentElement?.clientHeight || 480;
     canvas.width = containerWidth;
     canvas.height = containerHeight;
-
-    // 디버깅 (1% 확률)
-    if (Math.random() < 0.01) {
-      console.log('[BodyTrackingTestPage] 랜드마크 그리기:', {
-        canvasSize: { width: canvas.width, height: canvas.height },
-        videoSize: { width: video.videoWidth, height: video.videoHeight },
-        keypointsCount: keypoints.length,
-        firstKeypoint: keypoints[0],
-      });
-    }
 
     // Canvas 초기화
     ctx.clearRect(0, 0, canvas.width, canvas.height);

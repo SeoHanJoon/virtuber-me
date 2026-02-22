@@ -46,10 +46,13 @@ export function mapBlendShapesToVRM(blendShapes: BlendShapesData) {
 
     // 눈 깜빡임 (더 정밀)
     blink: {
-      left: Math.max(shapes.eyeBlinkLeft || 0, shapes.eyeSquintLeft || 0 * 0.5),
+      left: Math.max(
+        shapes.eyeBlinkLeft || 0,
+        (shapes.eyeSquintLeft || 0) * 0.5
+      ),
       right: Math.max(
         shapes.eyeBlinkRight || 0,
-        shapes.eyeSquintRight || 0 * 0.5
+        (shapes.eyeSquintRight || 0) * 0.5
       ),
     },
 
@@ -81,7 +84,8 @@ export function mapBlendShapesToVRM(blendShapes: BlendShapesData) {
     // 뺨 (추가)
     cheek: {
       puff: Math.max(shapes.cheekPuff || 0, 0),
-      squint: (shapes.cheekSquintLeft || 0 + shapes.cheekSquintRight || 0) / 2,
+      squint:
+        ((shapes.cheekSquintLeft || 0) + (shapes.cheekSquintRight || 0)) / 2,
     },
 
     // 입술 세부 표현 (추가)

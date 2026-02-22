@@ -31,7 +31,7 @@ const httpServer = createServer(app);
 // Socket.IO 서버 생성
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   cors: {
-    origin: '*', // 개발 환경용 - 프로덕션에서는 특정 도메인으로 제한
+    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
     methods: ['GET', 'POST'],
   },
   // 연결 설정
@@ -69,6 +69,23 @@ io.on(
      */
     socket.on('join', (data) => {
       try {
+        // 입력 유효성 검증
+        if (
+          !data ||
+          typeof data.modelPath !== 'string' ||
+          data.modelPath.length > 200
+        ) {
+          socket.emit('error', 'Invalid join payload');
+          return;
+        }
+        if (
+          data.nickname &&
+          (typeof data.nickname !== 'string' || data.nickname.length > 50)
+        ) {
+          socket.emit('error', 'Invalid nickname');
+          return;
+        }
+
         const roomId = data.roomId || 'default';
         userId = uuidv4();
 
@@ -139,6 +156,16 @@ io.on(
         return;
       }
 
+      // 입력 유효성 검증
+      if (
+        !payload ||
+        !Array.isArray(payload.pos) ||
+        payload.pos.length !== 3 ||
+        !payload.pos.every((n) => typeof n === 'number' && isFinite(n))
+      ) {
+        return;
+      }
+
       try {
         const now = Date.now();
         const lastUpdate = lastUpdateTime.get(socket.id) || 0;
@@ -179,13 +206,6 @@ io.on(
 
           // 같은 룸의 다른 사용자들에게만 브로드캐스트
           socket.to(roomId).emit('user_update', payload);
-
-          // 디버그: 업데이트 브로드캐스트 확인 (초당 1회)
-          if (Math.random() < 0.1) {
-            console.log(
-              `[업데이트] ${user.nickname} → 룸 "${roomId}" (${room.users.size - 1}명에게)`
-            );
-          }
         }
       } catch (error) {
         console.error('[에러] update 처리 중 오류:', error);
